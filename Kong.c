@@ -24,39 +24,12 @@
 #define KEY_ENTER 28
 #define KEY_ESC 1
 
-#define GAME_OBJECT_LABEL_LENGTH 16
-
 #define MAX_GAME_OBJECTS 64
 #define MAX_SAVED_INPUT 4
 
 #define JUMP_DURATION_IN_TICKS 6
 
 extern struct intmap far *sys_imp;
-
-/* Structs */
-// Used to save the position of elements
-typedef struct Position{
-    int x;
-    int y;
-} position;
-
-// Used to store information about game objects in the game
-typedef struct GameObject{
-    // The label of the game object
-    // Can be used to identified the object
-    char label[GAME_OBJECT_LABEL_LENGTH] ;
-
-    // The top left point of the game object
-    position top_left_point;
-
-    // The width of the game object
-    int width;
-    // The height of the game object
-    int height;
-
-    // The model of the game object
-    char** model;
-} gameObject;
 
 /* Time vars */
 // Counting the ticks
