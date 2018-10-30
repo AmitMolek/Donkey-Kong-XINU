@@ -24,8 +24,6 @@
 #define KEY_ENTER 28
 #define KEY_ESC 1
 
-#define GAME_OBJECT_LABEL_LENGTH 16
-
 #define MAX_GAME_OBJECTS 64
 #define MAX_SAVED_INPUT 4
 
