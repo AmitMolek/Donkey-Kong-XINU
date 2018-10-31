@@ -4,7 +4,7 @@
 #include <bios.h>
 
 #include "maps.h"
-#include "kongf.h"
+//#include "kongf.h"
 
 #define TICKS_IN_A_SECOND 18
 #define CYCLE_UPDATER 1
@@ -29,7 +29,34 @@
 
 #define JUMP_DURATION_IN_TICKS 6
 
+#define GAME_OBJECT_LABEL_LENGTH 16
+
 extern struct intmap far *sys_imp;
+
+/* Structs */
+// Used to save the position of elements
+typedef struct Position{
+    int x;
+    int y;
+} position;
+
+// Used to store information about game objects in the game
+typedef struct GameObject{
+    // The label of the game object
+    // Can be used to identified the object
+    char label[GAME_OBJECT_LABEL_LENGTH] ;
+
+    // The top left point of the game object
+    position top_left_point;
+
+    // The width of the game object
+    int width;
+    // The height of the game object
+    int height;
+
+    // The model of the game object
+    char** model;
+} gameObject;
 
 /* Time vars */
 // Counting the ticks
@@ -81,6 +108,8 @@ char mario_model[3][3] =
 gameObject playerObject = {"Player", {40, 20}, 3, 3, mario_model};
 // Saves the time that the player jumped (used to know if to apply gravity to the player)
 int air_duration_elapsed = 0;
+// is the player on top of a ladder
+int on_top_ladder = 0;
 
 /* Princess vars */
 char princess_model[2][2] = {
@@ -108,6 +137,10 @@ char hammer_model[1][2] =
 // The game object of THE HAMMER
 gameObject hammerObject = {"Hammer", {2, 2}, 2, 1, hammer_model};
 
+/* Ladders vars */
+// Using a pointer to know what (level) ladders to draw
+char* ladder_map_ptr = NULL;
+
 /* Gravity vars */
 // Apply gravity every number of ticks
 int apply_gravity_every_ticks = 5;
@@ -119,6 +152,42 @@ int gravity_ticks = 5;
 char saved_color_byte;
 // Is the user exited the game
 int game_exited = 0;
+
+// This function is used to better print to the console
+// Avoiding flickering, more color options and shit...
+void print_to_screen(){
+    int i = 0;
+    int j = 0;
+    char current_pixel;
+    // The default color byte that we use to print to the console
+    // the default is white text with black background
+    // 15 = 00001111
+    char default_color_byte = 15;
+
+    // Init the screen to top left point
+    asm{
+        MOV AX, 0B800h
+        MOV ES, AX
+        MOV DI, 0
+    }
+
+    for (i = 0; i < SCREEN_HEIGHT; i++){
+        for (j = 0; j < SCREEN_WIDTH; j++){
+            // Getting the char we need to print
+            current_pixel = display[i * SCREEN_WIDTH + j];
+
+            // Printing the char to the console
+            // and advancing the index to the next cell of the console
+            asm{
+                MOV AL, BYTE PTR current_pixel
+                MOV AH, BYTE PTR default_color_byte
+
+                MOV ES:[DI], AX
+                ADD DI, 2
+            }
+        }
+    }
+}
 
 // Wipes the entire screen
 void wipe_entire_screen(){
@@ -276,42 +345,6 @@ void time_handler(){
     }
 }
 
-// This function is used to better print to the console
-// Avoiding flickering, more color options and shit...
-void print_to_screen(){
-    int i = 0;
-    int j = 0;
-    char current_pixel;
-    // The default color byte that we use to print to the console
-    // the default is white text with black background
-    // 15 = 00001111
-    char default_color_byte = 15;
-
-    // Init the screen to top left point
-    asm{
-        MOV AX, 0B800h
-        MOV ES, AX
-        MOV DI, 0
-    }
-
-    for (i = 0; i < SCREEN_HEIGHT; i++){
-        for (j = 0; j < SCREEN_WIDTH; j++){
-            // Getting the char we need to print
-            current_pixel = display[i * SCREEN_WIDTH + j];
-
-            // Printing the char to the console
-            // and advancing the index to the next cell of the console
-            asm{
-                MOV AL, BYTE PTR current_pixel
-                MOV AH, BYTE PTR default_color_byte
-
-                MOV ES:[DI], AX
-                ADD DI, 2
-            }
-        }
-    }
-}
-
 // Handles the drawing to the 'screen'
 void drawer(){
     while (TRUE){
@@ -321,6 +354,33 @@ void drawer(){
         print_to_screen();
         //printf(display);
     }
+}
+
+// Checks for collisions inside the game object model
+// Returns 0 - no collisions
+// Returns 2 - ladder
+int check_collision_inside_model(gameObject* obj){
+    // Taking the top left point of the model of the game object
+    position top_left = obj->top_left_point;
+
+    // Getting the dimensions of the game object's model
+    int model_height = obj->height;
+    int model_width = obj->width;
+
+    int i = 0;
+    int j = 0;
+
+    // looping from the top left point to the right bottom point
+    // and checking for collisions
+    for (i = top_left.y; i < top_left.y + model_height; i++){
+        for (j = top_left.x; j < top_left.x + model_width; j++){
+            if (ladder_map_ptr != NULL){
+                if (ladder_map_ptr[i * SCREEN_WIDTH + j] == '_') return 2;
+            }
+        }
+    }
+
+    return 0;
 }
 
 // Checks for collisions
@@ -339,6 +399,11 @@ int check_collision_with_map(gameObject* obj, int x_movement, int y_movement){
     int check_pos_y = top_left.y;
 
     int i = 0;
+    char currentLadderPixel;
+
+    // if the player is on top of a ladder
+    // we dont need to calculate collision
+    //if (on_top_ladder && strstr(obj->label, "Player")) return 2;
 
     // if we have any movement on the x axis
     if (x_movement != 0){
@@ -370,8 +435,13 @@ int check_collision_with_map(gameObject* obj, int x_movement, int y_movement){
         // meaning if the model width is 2, we need to check 2 pixels above/below
         // of the model for collision
         for (i = top_left.x; i < top_left.x + model_width; i++){
-            // Check for collision with the map elements
-            if (map_1[check_pos_y][i] == 'z' || map_1[check_pos_y][i] == 'Z') return 0;
+            currentLadderPixel = ladder_map_ptr[check_pos_y * SCREEN_WIDTH + i];
+            if ((currentLadderPixel == '_' || currentLadderPixel == '|') && strstr(obj->label, "Player"))
+                return 3;
+            if ((!on_top_ladder && strstr(obj->label, "Player")) || strstr(obj->label, "Player") == NULL){
+                // Check for collision with the map elements
+                if (map_1[check_pos_y][i] == 'z' || map_1[check_pos_y][i] == 'Z') return 0;
+            }
         }
     }
 
@@ -391,7 +461,10 @@ void move_object(gameObject* obj, int x_movement, int y_movement){
     //    printf("%s, %d (%d, %d)\n", obj->label, check_movement_result, 
     //    obj->top_left_point.x, obj->top_left_point.y);
     // If the new movement is valid (1 = no collisions)
-    if (check_movement_result == 1){
+    if (check_movement_result == 1 || check_movement_result == 2){
+        (obj->top_left_point).x += x_movement;
+        (obj->top_left_point).y += y_movement;
+    }else if (check_collision_with_map(&playerObject, 0, 1) && check_movement_result == 3 && on_top_ladder){
         (obj->top_left_point).x += x_movement;
         (obj->top_left_point).y += y_movement;
     }
@@ -413,7 +486,7 @@ void apply_gravity_to_game_objects(){
     int i = 0;
 
     for (i = 0; i < 2; i++){
-        if(strstr(game_gameObjects[i]->label, "Player"))
+        if(strstr(game_gameObjects[i]->label, "Player") && !on_top_ladder)
             if ((elapsed_time - air_duration_elapsed) >= JUMP_DURATION_IN_TICKS)
                 move_object(game_gameObjects[i], 0, 1);
     }
@@ -439,8 +512,6 @@ void insert_ladders_to_map(int level){
     int i = 0;
     int j = 0;
 
-    // Using a pointer to know what (level) ladders to draw
-    char* ladder_map_ptr = NULL;
     if (level == 1){
         ladder_map_ptr = ladders_level_1[0];
     }
@@ -517,19 +588,33 @@ void handle_player_movement(int input_scan_code){
     // Using the input change the position of the player
     //position playerPos* = &(&playerObject)->top_left_point;
     position* playerPos = &(playerObject.top_left_point);
+    int collision_result_map = check_collision_with_map(&playerObject, 0, 1);
+    int collision_result_ladder = check_collision_inside_model(&playerObject);
 
+    printf("Result: %d Ladder: %d\n", collision_result_map, on_top_ladder);
+    if (collision_result_ladder == 0 && on_top_ladder) on_top_ladder = 0;
+    //printf("Result: %d\n", collision_result_ladder);
     // if the player is not grounded we dont want it to control mario
-    if (check_collision_with_map(&playerObject, 0, 1)) return;
-
-    if ((input_scan_code == ARROW_UP) || (input_scan_code == KEY_W)){
-        //move_object(&playerObject, 0, -1);
-        player_jump();
-    }else if ((input_scan_code == ARROW_RIGHT) || (input_scan_code == KEY_D)){
-        move_object(&playerObject, 1, 0);
-    }else if ((input_scan_code == ARROW_LEFT) || (input_scan_code == KEY_A)){
-        move_object(&playerObject, -1, 0);
-    }else if ((input_scan_code == ARROW_DOWN) || (input_scan_code == KEY_S)){
-        move_object(&playerObject, 0, 1);
+    if (!collision_result_map || on_top_ladder || collision_result_map == 3){
+        if ((input_scan_code == ARROW_UP) || (input_scan_code == KEY_W)){
+            //move_object(&playerObject, 0, -1);
+            // if the player is standing near a ladder
+            if (collision_result_ladder == 2){
+                on_top_ladder = 1;
+                move_object(&playerObject, 0, -1);
+            }else {
+                player_jump();
+            }
+        }else if ((input_scan_code == ARROW_RIGHT) || (input_scan_code == KEY_D)){
+            move_object(&playerObject, 1, 0);
+        }else if ((input_scan_code == ARROW_LEFT) || (input_scan_code == KEY_A)){
+            move_object(&playerObject, -1, 0);
+        }else if ((input_scan_code == ARROW_DOWN) || (input_scan_code == KEY_S)){
+            if (collision_result_map == 3){
+                on_top_ladder = 1;
+            }
+            move_object(&playerObject, 0, 1);
+        }
     }
 
     // Makes sure that the player is in the boundaries of the screen
@@ -550,8 +635,10 @@ void updater(){
     while (TRUE){
         receive();
 
+        //on_top_ladder = 0;
         for (i = 0; i < input_queue_received; i++){
             handle_player_movement(input_queue[i]);
+            //printf("Col: %d\n", check_collision_inside_model(&playerObject));
             //printf("%d: [%d]: (%d, %d)\n", 
             //i, input_queue[i], playerObject.top_left_point.x, playerObject.top_left_point.y);
         }
