@@ -25,6 +25,7 @@
 #define KEY_ESC 1
 
 #define MAX_GAME_OBJECTS 64
+#define MAX_BARRELS_OBJECT MAX_GAME_OBJECTS - 1
 #define MAX_SAVED_INPUT 4
 
 #define JUMP_DURATION_IN_TICKS 6
@@ -136,6 +137,14 @@ char hammer_model[1][2] =
 };
 // The game object of THE HAMMER
 gameObject hammerObject = {"Hammer", {2, 2}, 2, 1, hammer_model};
+
+/* Barrels vars*/
+char barrel_model[1][2] = 
+{
+    "00"
+};
+gameObject* barrels_array[MAX_GAME_OBJECTS];
+int barrels_array_index = 0;
 
 /* Ladders vars */
 // Using a pointer to know what (level) ladders to draw
@@ -358,8 +367,8 @@ void drawer(){
 
 // Checks for collisions inside the game object model
 // Returns 0 - no collisions
-// Returns 2 - ladder
-int check_collision_inside_model(gameObject* obj){
+// Returns 1 - ladder
+int check_collision_with_ladder(gameObject* obj, int below){
     // Taking the top left point of the model of the game object
     position top_left = obj->top_left_point;
 
@@ -369,14 +378,24 @@ int check_collision_inside_model(gameObject* obj){
 
     int i = 0;
     int j = 0;
+    char currentLadderPixel;
 
-    // looping from the top left point to the right bottom point
-    // and checking for collisions
-    for (i = top_left.y; i < top_left.y + model_height; i++){
-        for (j = top_left.x; j < top_left.x + model_width; j++){
-            if (ladder_map_ptr != NULL){
-                if (ladder_map_ptr[i * SCREEN_WIDTH + j] == '_') return 2;
+    // if we want to check inside the player model
+    if (!below){
+        // looping from the top left point to the right bottom point
+        // and checking for collisions
+        for (i = top_left.y; i < top_left.y + model_height; i++){
+            for (j = top_left.x; j < top_left.x + model_width; j++){
+                if (ladder_map_ptr != NULL){
+                    if (ladder_map_ptr[i * SCREEN_WIDTH + j] == '_') return 1;
+                }
             }
+        }
+    }else {
+        // Check all the pixels below the objects model
+        for (i = top_left.x; i < top_left.x + model_width; i++){
+            currentLadderPixel = ladder_map_ptr[(top_left.y + model_height) * SCREEN_WIDTH + i];
+            if (currentLadderPixel == '_' || currentLadderPixel == '|') return 1;
         }
     }
 
@@ -435,13 +454,8 @@ int check_collision_with_map(gameObject* obj, int x_movement, int y_movement){
         // meaning if the model width is 2, we need to check 2 pixels above/below
         // of the model for collision
         for (i = top_left.x; i < top_left.x + model_width; i++){
-            currentLadderPixel = ladder_map_ptr[check_pos_y * SCREEN_WIDTH + i];
-            if ((currentLadderPixel == '_' || currentLadderPixel == '|') && strstr(obj->label, "Player"))
-                return 3;
-            if ((!on_top_ladder && strstr(obj->label, "Player")) || strstr(obj->label, "Player") == NULL){
-                // Check for collision with the map elements
-                if (map_1[check_pos_y][i] == 'z' || map_1[check_pos_y][i] == 'Z') return 0;
-            }
+            // Check for collision with the map elements
+            if (map_1[check_pos_y][i] == 'z' || map_1[check_pos_y][i] == 'Z') return 0;
         }
     }
 
@@ -449,24 +463,55 @@ int check_collision_with_map(gameObject* obj, int x_movement, int y_movement){
     return 1;
 }
 
+// Adds a movement to the object
+void add_to_object_position(gameObject* obj, int x_movement, int y_movement){
+    (obj->top_left_point).x += x_movement;
+    (obj->top_left_point).y += y_movement;
+}
+
 // Movement with collisions
 // Moves the object if there are no collisions
 // If we want to move any object we want to use this function
 void move_object(gameObject* obj, int x_movement, int y_movement){
-    int check_movement_result;
+    int check_movement_map;
+    int check_movement_ladder_inside;
+    int check_movement_ladder_below;
 
-    // Checks for collisions
-    check_movement_result = check_collision_with_map(obj, x_movement, y_movement);
-    //if (strstr(obj->label, "Player") != NULL)
-    //    printf("%s, %d (%d, %d)\n", obj->label, check_movement_result, 
-    //    obj->top_left_point.x, obj->top_left_point.y);
-    // If the new movement is valid (1 = no collisions)
-    if (check_movement_result == 1 || check_movement_result == 2){
-        (obj->top_left_point).x += x_movement;
-        (obj->top_left_point).y += y_movement;
-    }else if (check_collision_with_map(&playerObject, 0, 1) && check_movement_result == 3 && on_top_ladder){
-        (obj->top_left_point).x += x_movement;
-        (obj->top_left_point).y += y_movement;
+    // Checks for collisions with the map
+    check_movement_map = check_collision_with_map(obj, x_movement, y_movement);
+
+    // if there is movement on the y axis
+    // and the object is the player
+    // annddd the player is on a ladder
+    // we want a different movement... ladder movement!
+    if (y_movement != 0 && strstr(obj->label, "Player") && on_top_ladder){
+        // if we got a down movement
+        if (y_movement > 0){
+            // Checks for ladders
+            check_movement_ladder_inside = check_collision_with_ladder(obj, 0);
+            check_movement_ladder_below = check_collision_with_ladder(obj, 1);
+
+            // if the player is colliding with a ladder
+            // and he can move without colliding with the map
+            // we can move
+            if (check_movement_ladder_inside && check_movement_map){
+                add_to_object_position(obj, x_movement, y_movement);            
+            }else {
+                // if the player is not colliding with a ladder
+                // or he is colliding with the map
+                // and if there is a ladder below him -> we can move
+                if (check_movement_ladder_below)
+                    add_to_object_position(obj, x_movement, y_movement);
+            }
+        }else {
+            // if the movement is up we dont fancy calculations
+            add_to_object_position(obj, x_movement, y_movement);
+        }
+    }else {
+        // If the new movement is valid (1 = no collisions)
+        if (check_movement_map){
+            add_to_object_position(obj, x_movement, y_movement);
+        }
     }
 }
 
@@ -475,8 +520,6 @@ void player_jump(){
     // Checks if the player is grounded
     if (!check_collision_with_map(&playerObject, 0, 1)){
         move_object(&playerObject, 0, -1);
-        //move_object(&playerObject, 0, -1);
-        //move_object(&playerObject, -1, 0);
         air_duration_elapsed = elapsed_time;
     }
 }
@@ -485,10 +528,20 @@ void player_jump(){
 void apply_gravity_to_game_objects(){
     int i = 0;
 
-    for (i = 0; i < 2; i++){
-        if(strstr(game_gameObjects[i]->label, "Player") && !on_top_ladder)
-            if ((elapsed_time - air_duration_elapsed) >= JUMP_DURATION_IN_TICKS)
-                move_object(game_gameObjects[i], 0, 1);
+    for (i = 0; i < MAX_GAME_OBJECTS; i++){
+        // if the object is the player
+        if (strstr(game_gameObjects[i]->label, "Player")){
+            // if the player is not on a ladder
+            if (!on_top_ladder){
+                // if it's time to try to apply gravity to the player
+                // (we give the player some air time so we have the effect of a fall)
+                if ((elapsed_time - air_duration_elapsed) >= JUMP_DURATION_IN_TICKS){
+                    move_object(game_gameObjects[i], 0, 1);
+                }
+            }
+        }else {
+            move_object(game_gameObjects[i], 0, 1);
+        }
     }
 }
 
@@ -583,26 +636,52 @@ void wipe_display_draft(){
     }
 }
 
+// Creates a barrel game object and inserts it to the barrels array
+void create_a_barrel(int x, int y){
+    gameObject* barrel = getmem(sizeof(gameObject));
+    strcpy(barrel->label, "Barrel");
+    barrel->model = barrel_model;
+    barrel->top_left_point.x = x;
+    barrel->top_left_point.y = y;
+    barrel->width = 2;
+    barrel->height = 1;
+
+    barrels_array[barrels_array_index] = barrel;
+    barrels_array_index++;
+    if (barrels_array_index >= MAX_BARRELS_OBJECT) barrels_array_index = 0;
+}
+
 // Handles the scan code of the input from the keybaord
 void handle_player_movement(int input_scan_code){
     // Using the input change the position of the player
-    //position playerPos* = &(&playerObject)->top_left_point;
     position* playerPos = &(playerObject.top_left_point);
-    int collision_result_map = check_collision_with_map(&playerObject, 0, 1);
-    int collision_result_ladder = check_collision_inside_model(&playerObject);
 
-    printf("Result: %d Ladder: %d\n", collision_result_map, on_top_ladder);
-    if (collision_result_ladder == 0 && on_top_ladder) on_top_ladder = 0;
-    //printf("Result: %d\n", collision_result_ladder);
+    // Checks for collision below the player with the map
+    int collision_result_map = check_collision_with_map(&playerObject, 0, 1);
+    // Checks for collision inside the player for ladders
+    int check_movement_ladder_inside = check_collision_with_ladder(&playerObject, 0);
+    // Checks for collision below the player for ladders
+    int check_movement_ladder_below = check_collision_with_ladder(&playerObject, 1);
+
+    // 1: if the player collided with the map and he is not inside a ladder
+    // we are not on a ladder
+    // 2: if the player is not near a ladder and there is no ladder below him
+    // we are not on a ladder
+    if (collision_result_map && !check_movement_ladder_inside ||
+    (!check_movement_ladder_inside && !check_movement_ladder_below)) on_top_ladder = 0;
+
     // if the player is not grounded we dont want it to control mario
-    if (!collision_result_map || on_top_ladder || collision_result_map == 3){
+    // or is the player standing near a ladder
+    if (!collision_result_map || check_movement_ladder_inside || check_movement_ladder_below){
         if ((input_scan_code == ARROW_UP) || (input_scan_code == KEY_W)){
-            //move_object(&playerObject, 0, -1);
-            // if the player is standing near a ladder
-            if (collision_result_ladder == 2){
+            // if the player is near a ladder
+            if (check_movement_ladder_inside){
                 on_top_ladder = 1;
                 move_object(&playerObject, 0, -1);
             }else {
+                // if the player is not near a ladder
+                // than he is trying to jump
+                on_top_ladder = 0;
                 player_jump();
             }
         }else if ((input_scan_code == ARROW_RIGHT) || (input_scan_code == KEY_D)){
@@ -610,10 +689,14 @@ void handle_player_movement(int input_scan_code){
         }else if ((input_scan_code == ARROW_LEFT) || (input_scan_code == KEY_A)){
             move_object(&playerObject, -1, 0);
         }else if ((input_scan_code == ARROW_DOWN) || (input_scan_code == KEY_S)){
-            if (collision_result_map == 3){
+            // if the player is above a ladder or on top of a ladder
+
+            // 1: if the player is colliding with a ladder and he is on it -> we can move down the ladder
+            // 2: if the player stands above a ladder -> we can move down the ladder
+            if ((check_movement_ladder_inside && on_top_ladder) || check_movement_ladder_below){
                 on_top_ladder = 1;
+                move_object(&playerObject, 0, 1);
             }
-            move_object(&playerObject, 0, 1);
         }
     }
 
@@ -638,9 +721,6 @@ void updater(){
         //on_top_ladder = 0;
         for (i = 0; i < input_queue_received; i++){
             handle_player_movement(input_queue[i]);
-            //printf("Col: %d\n", check_collision_inside_model(&playerObject));
-            //printf("%d: [%d]: (%d, %d)\n", 
-            //i, input_queue[i], playerObject.top_left_point.x, playerObject.top_left_point.y);
         }
         input_queue_received = 0;
         input_queue_tail = 0;
@@ -652,6 +732,12 @@ void updater(){
         if (gravity_ticks <= 0){
             apply_gravity_to_game_objects();
             gravity_ticks = apply_gravity_every_ticks;
+        }
+
+        for (i = 0; i < MAX_BARRELS_OBJECT; i++){
+            if (barrels_array[i] != NULL){
+                insert_model_to_draft(barrels_array[i]);
+            }
         }
 
         insert_model_to_draft(&princessObject);
