@@ -158,10 +158,15 @@ char barrel_model[1][2] =
 {
     "00"
 };
+// Array that holds all the barrels that are in the game
 barrel* barrels_array[MAX_GAME_OBJECTS];
+// The index that iterate the barrels array
 int barrels_array_index = 0;
+// Timer to know when to spawn a new barrel
 int spawn_barrel_timer = 0;
+// How long do we wait between spawning a new barrel
 int spawn_barrel_speed_in_ticks = 6 * 18;
+// How long do we wait between moving the barrels
 int barrel_movement_speed_in_ticks = 5;
 
 /* Ladders vars */
@@ -349,9 +354,12 @@ void time_handler(){
         // saving the last call of the updater to measure the delta time
         updater_last_call = elapsed_time;
 
+        // Updating the timer of the gravity
         gravity_ticks -= deltaTime;
+        // Updating the timer of the spawning of barrels
         spawn_barrel_timer -= deltaTime;
 
+        // Updating the timers of all the barrel's movement
         for (i = 0; i < MAX_BARRELS_OBJECT; i++){
             if (barrels_array[i] != NULL){
                 barrels_array[i]->movement_ticks -= deltaTime;
@@ -551,19 +559,26 @@ void player_jump(){
     }
 }
 
+// Moves all the barrels in the map
 void move_barrels(){
     int i = 0;
     int delta_ticks = 0;
 
     for (i = 0; i < MAX_BARRELS_OBJECT; i++){
+        // if the barrel exist
         if (barrels_array[i] != NULL){
+            // if it's time to move the barrel
             if (barrels_array[i]->movement_ticks <= 0) {
+                // Resetting the barrel's movement timer
                 barrels_array[i]->movement_ticks = barrel_movement_speed_in_ticks;
-                // if the barrel in on the platform
+                // if the barrel in on the platform (grounded)
+                // we want a movement on the x axis only if the barrel is grounded
                 if (!check_collision_with_map(barrels_array[i]->obj, 0, 1)){
                     barrels_array[i]->is_grounded = 1;
                     move_object(barrels_array[i]->obj, barrels_array[i]->movement_direction, 0);
                 }else {
+                    // if the barrel was on top of a platform
+                    // and now it's falling, we want to change the direction of movement
                     if (barrels_array[i]->is_grounded){
                         barrels_array[i]->is_grounded = 0;
                         barrels_array[i]->movement_direction *= -1;
@@ -688,9 +703,14 @@ void wipe_display_draft(){
 
 // Creates a barrel with at (x,y) with movement ticks and gravity ticks
 void create_barrel(int x, int y, int movement, int gravity){
+    // if there is no place in the array for the barrel
+    // we dont want to create it because we are full
+    if (barrels_array[barrels_array_index] != NULL) return;
+
     barrel* barrel = getmem(sizeof(barrel));
     gameObject* barrelObj = getmem(sizeof(gameObject));
 
+    // Init the game object of the barrel
     strcpy(barrelObj->label, "Barrel");
     barrelObj->model = barrel_model;
     barrelObj->top_left_point.x = x;
@@ -698,6 +718,7 @@ void create_barrel(int x, int y, int movement, int gravity){
     barrelObj->width = 2;
     barrelObj->height = 1;
 
+    // Init the barrel object
     barrel->obj = barrelObj;
     barrel->movement_ticks = movement;
     barrel->movement_ticks_delta = 0;
@@ -705,6 +726,7 @@ void create_barrel(int x, int y, int movement, int gravity){
     barrel->is_grounded = 1;
     barrel->movement_direction = 1;
 
+    // Adding the barrel to the barrels array
     barrels_array[barrels_array_index] = barrel;
     barrels_array_index++;
     if (barrels_array_index >= MAX_BARRELS_OBJECT) barrels_array_index = 0;
@@ -768,6 +790,7 @@ void handle_player_movement(int input_scan_code){
     //printf("Player position: (%d, %d)\n", playerPos.x, playerPos.y);
 }
 
+// Inserts the clock the the display draft
 void insert_clock_to_draft(){
     char c_min_h;
     char c_min_l;
@@ -779,11 +802,11 @@ void insert_clock_to_draft(){
     c_sec_h = (clock_seconds / 10 % 10) + '0';
     c_sec_l = (clock_seconds % 10) + '0';
 
-    display_draft[0][0] = c_min_h;
-    display_draft[0][1] = c_min_l;
-    display_draft[0][2] = ':';
-    display_draft[0][3] = c_sec_h;
-    display_draft[0][4] = c_sec_l;
+    display_draft[0][SCREEN_WIDTH - 0] = c_min_h;
+    display_draft[0][SCREEN_WIDTH - 1] = c_min_l;
+    display_draft[0][SCREEN_WIDTH - 2] = ':';
+    display_draft[0][SCREEN_WIDTH - 3] = c_sec_h;
+    display_draft[0][SCREEN_WIDTH - 4] = c_sec_l;
 }
 
 // Handles the updating of stuff and shit
@@ -795,10 +818,11 @@ void updater(){
     while (TRUE){
         receive();
 
-        //on_top_ladder = 0;
+        // if there is a input from the player we need to handle it
         for (i = 0; i < input_queue_received; i++){
             handle_player_movement(input_queue[i]);
         }
+        // Resetting the input queue vars for next time
         input_queue_received = 0;
         input_queue_tail = 0;
 
@@ -806,19 +830,27 @@ void updater(){
 
         insert_ladders_to_map(1);
 
+        // if the gravity timer is dont we need to apply gravity
         if (gravity_ticks <= 0){
             apply_gravity_to_game_objects();
             gravity_ticks = apply_gravity_every_ticks;
         }
 
+        // if the spawning barrel is dont we need to spawn a new one
         if (spawn_barrel_timer <= 0){
+            // We create a new barrel at kong's position
+            // and init it with the speed of the movement and speed of gravity
             create_barrel(kongObject.top_left_point.x + 1, kongObject.top_left_point.y + 2,
             barrel_movement_speed_in_ticks, 6);
+            // Resetting the spawning barrel timer
             spawn_barrel_timer = spawn_barrel_speed_in_ticks;
         }
 
+        // Move the barrels
         move_barrels();
+        // Inserts the barrel's model to the dispaly draft
         for (i = 0; i < MAX_BARRELS_OBJECT; i++){
+            // Only if the barrel exists
             if (barrels_array[i] != NULL){
                 insert_model_to_draft(barrels_array[i]->obj);
             }
