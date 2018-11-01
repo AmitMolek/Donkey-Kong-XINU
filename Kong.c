@@ -168,6 +168,8 @@ int spawn_barrel_timer = 0;
 int spawn_barrel_speed_in_ticks = 6 * 18;
 // How long do we wait between moving the barrels
 int barrel_movement_speed_in_ticks = 5;
+// Holds all the locations of barrels
+char barrels_location[SCREEN_HEIGHT][SCREEN_WIDTH];
 
 /* Ladders vars */
 // Using a pointer to know what (level) ladders to draw
@@ -184,6 +186,18 @@ int gravity_ticks = 5;
 char saved_color_byte;
 // Is the user exited the game
 int game_exited = 0;
+
+// Resets the barrels map
+void reset_barrels_location_map(){
+    int i = 0;
+    int j = 0;
+
+    for (i = 0; i < SCREEN_HEIGHT; i++){
+        for (j = 0; j < SCREEN_WIDTH; j++){
+            barrels_location[i][j] = ' ';
+        }
+    }
+}
 
 // This function is used to better print to the console
 // Avoiding flickering, more color options and shit...
@@ -400,6 +414,55 @@ void drawer(){
     }
 }
 
+// Deletes a barrel from the game
+// frees it's memory and stuff
+void delete_barrel(int index_in_array){
+    barrel* barrelToDelete = barrels_array[index_in_array];
+
+    barrels_array[index_in_array] = NULL;
+    // wtf ? weird shit happens
+    //freemem(&barrelToDelete->obj, sizeof(gameObject));
+    //freemem(&barrelToDelete, sizeof(barrel));
+}
+
+// Checks if there is a collision between the gameobject and the barrel in index_in_array
+void check_collision_with_a_barrel(gameObject* obj, int index_in_array){
+    // Taking the top left point of the model of the game object
+    position top_left = obj->top_left_point;
+
+    // Getting the dimensions of the game object's model
+    int model_height = obj->height;
+    int model_width = obj->width;
+
+    int h = 0;
+    int w = 0;
+
+    barrel* barrel = barrels_array[index_in_array];
+    int barrel_x = barrel->obj->top_left_point.x;
+    int barrel_y = barrel->obj->top_left_point.y;
+    int barrel_height = barrel->obj->height;
+    int barrel_width = barrel->obj->width;
+    
+    // Calculating edges for the first rectangle
+    int obj_right = top_left.x + model_width - 1;
+    int obj_left = top_left.x;
+    int obj_top = top_left.y;
+    int obj_bottom = top_left.y + model_height - 1;
+
+    // Calculating edges for the second rectangle
+    int b_right = barrel_x + barrel_width - 1;
+    int b_left = barrel_x;
+    int b_top = barrel_y;
+    int b_bottom = barrel_y + barrel_height - 1;
+
+    // Checks for collision between 2 rectangles
+    if (obj_right >= b_left && obj_left <= b_right && obj_bottom >= b_top && obj_top <= b_bottom){
+        delete_barrel(index_in_array);
+        printf("%d hit a barrel!\n", index_in_array);
+    }
+
+}
+
 // Checks for collisions inside the game object model
 // Returns 0 - no collisions
 // Returns 1 - ladder
@@ -566,7 +629,7 @@ void move_barrels(){
 
     for (i = 0; i < MAX_BARRELS_OBJECT; i++){
         // if the barrel exist
-        if (barrels_array[i] != NULL){
+        if (barrels_array[i] != NULL && barrels_array[i]->obj != NULL){
             // if it's time to move the barrel
             if (barrels_array[i]->movement_ticks <= 0) {
                 // Resetting the barrel's movement timer
@@ -576,6 +639,7 @@ void move_barrels(){
                 if (!check_collision_with_map(barrels_array[i]->obj, 0, 1)){
                     barrels_array[i]->is_grounded = 1;
                     move_object(barrels_array[i]->obj, barrels_array[i]->movement_direction, 0);
+                    check_collision_with_a_barrel(&playerObject, i);
                 }else {
                     // if the barrel was on top of a platform
                     // and now it's falling, we want to change the direction of movement
@@ -703,12 +767,18 @@ void wipe_display_draft(){
 
 // Creates a barrel with at (x,y) with movement ticks and gravity ticks
 void create_barrel(int x, int y, int movement, int gravity){
+    barrel* barrel;
+    gameObject* barrelObj;
+
     // if there is no place in the array for the barrel
     // we dont want to create it because we are full
     if (barrels_array[barrels_array_index] != NULL) return;
 
-    barrel* barrel = getmem(sizeof(barrel));
-    gameObject* barrelObj = getmem(sizeof(gameObject));
+    barrel = getmem(sizeof(barrel));
+    barrelObj = getmem(sizeof(gameObject));
+
+    // Failed to allocate memory
+    if (barrel == NULL || barrelObj == NULL) return;
 
     // Init the game object of the barrel
     strcpy(barrelObj->label, "Barrel");
@@ -735,7 +805,7 @@ void create_barrel(int x, int y, int movement, int gravity){
 // Handles the scan code of the input from the keybaord
 void handle_player_movement(int input_scan_code){
     // Using the input change the position of the player
-    position* playerPos = &(playerObject.top_left_point);
+    //position* playerPos = &(playerObject.top_left_point);
 
     // Checks for collision below the player with the map
     int collision_result_map = check_collision_with_map(&playerObject, 0, 1);
@@ -802,11 +872,11 @@ void insert_clock_to_draft(){
     c_sec_h = (clock_seconds / 10 % 10) + '0';
     c_sec_l = (clock_seconds % 10) + '0';
 
-    display_draft[0][SCREEN_WIDTH - 0] = c_min_h;
-    display_draft[0][SCREEN_WIDTH - 1] = c_min_l;
-    display_draft[0][SCREEN_WIDTH - 2] = ':';
-    display_draft[0][SCREEN_WIDTH - 3] = c_sec_h;
-    display_draft[0][SCREEN_WIDTH - 4] = c_sec_l;
+    display_draft[0][SCREEN_WIDTH - 5] = c_min_h;
+    display_draft[0][SCREEN_WIDTH - 4] = c_min_l;
+    display_draft[0][SCREEN_WIDTH - 3] = ':';
+    display_draft[0][SCREEN_WIDTH - 2] = c_sec_h;
+    display_draft[0][SCREEN_WIDTH - 1] = c_sec_l;
 }
 
 // Handles the updating of stuff and shit
@@ -814,6 +884,7 @@ void updater(){
     int prev_second = 0;
 
     int i = 0;
+    int j = 0;
 
     while (TRUE){
         receive();
@@ -821,6 +892,7 @@ void updater(){
         // if there is a input from the player we need to handle it
         for (i = 0; i < input_queue_received; i++){
             handle_player_movement(input_queue[i]);
+
         }
         // Resetting the input queue vars for next time
         input_queue_received = 0;
@@ -844,15 +916,25 @@ void updater(){
             barrel_movement_speed_in_ticks, 6);
             // Resetting the spawning barrel timer
             spawn_barrel_timer = spawn_barrel_speed_in_ticks;
+            printf("Index: %d\n", barrels_array_index);
         }
 
-        // Move the barrels
-        move_barrels();
         // Inserts the barrel's model to the dispaly draft
         for (i = 0; i < MAX_BARRELS_OBJECT; i++){
             // Only if the barrel exists
-            if (barrels_array[i] != NULL){
+            if (barrels_array[i] != NULL && barrels_array[i]->obj != NULL){
                 insert_model_to_draft(barrels_array[i]->obj);
+            }
+        }
+
+        //check_collision_with_barrel(&playerObject);
+        // Move the barrels
+        move_barrels();
+
+        // Check for collisions with barrels
+        for (j = 0; j < MAX_BARRELS_OBJECT; j++){
+            if (barrels_array[j] != NULL && barrels_array[i]->obj != NULL){
+                check_collision_with_a_barrel(&playerObject, j);
             }
         }
 
