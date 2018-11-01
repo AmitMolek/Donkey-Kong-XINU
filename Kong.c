@@ -28,9 +28,9 @@
 #define MAX_BARRELS_OBJECT MAX_GAME_OBJECTS - 1
 #define MAX_SAVED_INPUT 4
 
-#define JUMP_DURATION_IN_TICKS 6
+#define JUMP_DURATION_IN_TICKS 25
 
-#define GAME_OBJECT_LABEL_LENGTH 16
+#define GAME_OBJECT_LABEL_LENGTH 18
 
 extern struct intmap far *sys_imp;
 
@@ -45,7 +45,7 @@ typedef struct Position{
 typedef struct GameObject{
     // The label of the game object
     // Can be used to identified the object
-    char label[GAME_OBJECT_LABEL_LENGTH] ;
+    char label[GAME_OBJECT_LABEL_LENGTH];
 
     // The top left point of the game object
     position top_left_point;
@@ -58,6 +58,21 @@ typedef struct GameObject{
     // The model of the game object
     char** model;
 } gameObject;
+
+// Used to store info about the barrel
+typedef struct Barrel{
+    // The barrel game object
+    gameObject* obj;
+
+    // How many ticks to move
+    int movement_ticks;
+    int movement_ticks_delta;
+    // How many ticks to apply gravity
+    int gravity_ticks;
+
+    int is_grounded;
+    int movement_direction;
+} barrel;
 
 /* Time vars */
 // Counting the ticks
@@ -143,8 +158,11 @@ char barrel_model[1][2] =
 {
     "00"
 };
-gameObject* barrels_array[MAX_GAME_OBJECTS];
+barrel* barrels_array[MAX_GAME_OBJECTS];
 int barrels_array_index = 0;
+int spawn_barrel_timer = 0;
+int spawn_barrel_speed_in_ticks = 6 * 18;
+int barrel_movement_speed_in_ticks = 5;
 
 /* Ladders vars */
 // Using a pointer to know what (level) ladders to draw
@@ -314,6 +332,8 @@ void time_handler(){
     int updater_last_call = 0;
     int deltaSeconds = 0;
 
+    int i = 0;
+
     while(TRUE){
         // Waiting for the time routine to wake up this process
         // Basically waiting for a tick to pass
@@ -330,6 +350,13 @@ void time_handler(){
         updater_last_call = elapsed_time;
 
         gravity_ticks -= deltaTime;
+        spawn_barrel_timer -= deltaTime;
+
+        for (i = 0; i < MAX_BARRELS_OBJECT; i++){
+            if (barrels_array[i] != NULL){
+                barrels_array[i]->movement_ticks -= deltaTime;
+            }
+        }
 
         // Checks if a second has passed
         if (deltaTime_counter >= TICKS_IN_A_SECOND){
@@ -524,23 +551,46 @@ void player_jump(){
     }
 }
 
+void move_barrels(){
+    int i = 0;
+    int delta_ticks = 0;
+
+    for (i = 0; i < MAX_BARRELS_OBJECT; i++){
+        if (barrels_array[i] != NULL){
+            if (barrels_array[i]->movement_ticks <= 0) {
+                barrels_array[i]->movement_ticks = barrel_movement_speed_in_ticks;
+                // if the barrel in on the platform
+                if (!check_collision_with_map(barrels_array[i]->obj, 0, 1)){
+                    barrels_array[i]->is_grounded = 1;
+                    move_object(barrels_array[i]->obj, barrels_array[i]->movement_direction, 0);
+                }else {
+                    if (barrels_array[i]->is_grounded){
+                        barrels_array[i]->is_grounded = 0;
+                        barrels_array[i]->movement_direction *= -1;
+                    }
+                }
+            }
+        }
+    }
+}
+
 // Apply gravity to all the game objects
 void apply_gravity_to_game_objects(){
     int i = 0;
+    gameObject* barrelObj;
 
-    for (i = 0; i < MAX_GAME_OBJECTS; i++){
-        // if the object is the player
-        if (strstr(game_gameObjects[i]->label, "Player")){
-            // if the player is not on a ladder
-            if (!on_top_ladder){
-                // if it's time to try to apply gravity to the player
-                // (we give the player some air time so we have the effect of a fall)
-                if ((elapsed_time - air_duration_elapsed) >= JUMP_DURATION_IN_TICKS){
-                    move_object(game_gameObjects[i], 0, 1);
-                }
-            }
-        }else {
+    // if the player is not on a ladder
+    if (!on_top_ladder){
+        // if it's time to try to apply gravity to the player
+        // (we give the player some air time so we have the effect of a fall)
+        if ((elapsed_time - air_duration_elapsed) >= JUMP_DURATION_IN_TICKS){
             move_object(game_gameObjects[i], 0, 1);
+        }
+    }
+
+    for (i = 0; i < MAX_BARRELS_OBJECT; i++){
+        if (barrels_array[i] != NULL){
+            move_object(barrels_array[i]->obj, 0, 1);
         }
     }
 }
@@ -636,15 +686,24 @@ void wipe_display_draft(){
     }
 }
 
-// Creates a barrel game object and inserts it to the barrels array
-void create_a_barrel(int x, int y){
-    gameObject* barrel = getmem(sizeof(gameObject));
-    strcpy(barrel->label, "Barrel");
-    barrel->model = barrel_model;
-    barrel->top_left_point.x = x;
-    barrel->top_left_point.y = y;
-    barrel->width = 2;
-    barrel->height = 1;
+// Creates a barrel with at (x,y) with movement ticks and gravity ticks
+void create_barrel(int x, int y, int movement, int gravity){
+    barrel* barrel = getmem(sizeof(barrel));
+    gameObject* barrelObj = getmem(sizeof(gameObject));
+
+    strcpy(barrelObj->label, "Barrel");
+    barrelObj->model = barrel_model;
+    barrelObj->top_left_point.x = x;
+    barrelObj->top_left_point.y = y;
+    barrelObj->width = 2;
+    barrelObj->height = 1;
+
+    barrel->obj = barrelObj;
+    barrel->movement_ticks = movement;
+    barrel->movement_ticks_delta = 0;
+    barrel->gravity_ticks = gravity;
+    barrel->is_grounded = 1;
+    barrel->movement_direction = 1;
 
     barrels_array[barrels_array_index] = barrel;
     barrels_array_index++;
@@ -709,6 +768,24 @@ void handle_player_movement(int input_scan_code){
     //printf("Player position: (%d, %d)\n", playerPos.x, playerPos.y);
 }
 
+void insert_clock_to_draft(){
+    char c_min_h;
+    char c_min_l;
+    char c_sec_h;
+    char c_sec_l;
+
+    c_min_h = (clock_minutes / 10 % 10) + '0';
+    c_min_l = (clock_minutes % 10) + '0';
+    c_sec_h = (clock_seconds / 10 % 10) + '0';
+    c_sec_l = (clock_seconds % 10) + '0';
+
+    display_draft[0][0] = c_min_h;
+    display_draft[0][1] = c_min_l;
+    display_draft[0][2] = ':';
+    display_draft[0][3] = c_sec_h;
+    display_draft[0][4] = c_sec_l;
+}
+
 // Handles the updating of stuff and shit
 void updater(){
     int prev_second = 0;
@@ -734,15 +811,23 @@ void updater(){
             gravity_ticks = apply_gravity_every_ticks;
         }
 
+        if (spawn_barrel_timer <= 0){
+            create_barrel(kongObject.top_left_point.x + 1, kongObject.top_left_point.y + 2,
+            barrel_movement_speed_in_ticks, 6);
+            spawn_barrel_timer = spawn_barrel_speed_in_ticks;
+        }
+
+        move_barrels();
         for (i = 0; i < MAX_BARRELS_OBJECT; i++){
             if (barrels_array[i] != NULL){
-                insert_model_to_draft(barrels_array[i]);
+                insert_model_to_draft(barrels_array[i]->obj);
             }
         }
 
         insert_model_to_draft(&princessObject);
         insert_model_to_draft(&playerObject);
         insert_model_to_draft(&kongObject);
+        insert_clock_to_draft();
 
         save_display_draft();
         prev_second = clock_seconds;
