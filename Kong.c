@@ -5,6 +5,8 @@
 
 #include "maps.h"
 
+#define RAND_2(MAX, MIN) (rand() % (MAX - MIN)) + MIN
+
 #define TICKS_IN_A_SECOND 18
 #define CYCLE_UPDATER 1
 #define CYCLE_DRAWER 2
@@ -28,12 +30,14 @@
 #define MAX_SAVED_INPUT 4
 
 #define JUMP_DURATION_IN_TICKS 25
+#define HAMMER_DURATION_IN_TICKS 3
 
 #define GAME_OBJECT_LABEL_LENGTH 18
 
 #define PLAYER_LIFE_COUNT 3
 #define PLAYER_START_POS_X 40
 #define PLAYER_START_POS_Y 20
+#define HAMMER_MAX_HITS 4
 
 #define FALLING_BARREL_SPAWN_IN_TICKS 18*4
 #define FALLING_BARREL_MAX_FALL 6*14
@@ -146,7 +150,10 @@ gameObject playerObject = {"Player", {PLAYER_START_POS_X, PLAYER_START_POS_Y}, 3
 int air_duration_elapsed = 0;
 // is the player on top of a ladder
 int on_top_ladder = 0;
+// is the player with the hammer
 int is_with_hammer = 0;
+// The direction the player is 'looking' (used to align the hammer)
+int player_movement_direction = 0;
 
 /* Princess vars */
 char princess_model[2][2] = {
@@ -169,10 +176,16 @@ gameObject kongObject = {"Kong", {22, 5}, 3, 3, kong_model};
 /* Hammer vars */
 char hammer_model[1][2] = 
 {
-    "[-"
+    "%%"
 };
 // The game object of THE HAMMER
 gameObject hammerObject = {"Hammer", {37, 20}, 2, 1, hammer_model};
+// Count how many hits left to the hammer
+int hammer_hits_left = HAMMER_MAX_HITS;
+// The time it takes to recover from a hit
+int hammer_hit_duration = 0;
+// Is the hammer in the map
+int is_hammer_exist = 0;
 
 /* Barrels vars*/
 char barrel_model[1][2] = 
@@ -454,7 +467,6 @@ void drawer(){
         // if the game was exited we dont want to keep drawing to the screen
         if (game_exited) return;
         print_to_screen();
-        //printf(display);
     }
 }
 
@@ -648,6 +660,64 @@ void add_to_object_position(gameObject* obj, int x_movement, int y_movement){
     (obj->top_left_point).y += y_movement;
 }
 
+// Spawns the hammer at one of the first 3 platform (NOT ON KONG PLATFORM)
+void spawn_hammer(){
+    // Rough est.
+    // First platform: X: [22,57] Y: 22
+    // Second platform: X: [22,53] Y: 17
+    // Third platform: X: [28,57] Y: 12
+
+    int rnd_x;
+    int rnd_y;
+    int rnd_platform;
+
+    rnd_platform = rand() % 3 + 1;
+
+    switch(rnd_platform){
+        case 1:
+            rnd_x = RAND_2(57, 22);
+            rnd_y = 22;
+        break;
+
+        case 2:
+            rnd_x = RAND_2(53, 22);
+            rnd_y = 17;
+        break;
+
+        case 3:
+            rnd_x = RAND_2(57, 28);
+            rnd_y = 12;
+        break;
+    }
+
+    hammerObject.top_left_point.x = rnd_x;
+    hammerObject.top_left_point.y = rnd_y;
+    is_hammer_exist = 1;
+    hammer_hits_left = HAMMER_MAX_HITS;
+}
+
+// 'Resets' the hammer, basically makes it disappear
+void reset_hammer(){
+    is_with_hammer = 0;
+    is_hammer_exist = 0;
+    spawn_hammer();
+}
+
+// Makes the player wield the hammer!
+void set_hammer_player_position(){
+    // if the player is not with the hammer than dont do anything here
+    if (!is_with_hammer) return;
+
+    // if the player is look to the right
+    if (player_movement_direction == 1){
+        hammerObject.top_left_point.x = playerObject.top_left_point.x + 3;
+    }else {
+        // if the player is looking to the left
+        hammerObject.top_left_point.x = playerObject.top_left_point.x - 2;
+    }
+    hammerObject.top_left_point.y = playerObject.top_left_point.y + 1;
+}
+
 // Movement with collisions
 // Moves the object if there are no collisions
 // If we want to move any object we want to use this function
@@ -658,6 +728,13 @@ void move_object(gameObject* obj, int x_movement, int y_movement){
 
     // Checks for collisions with the map
     check_movement_map = check_collision_with_map(obj, x_movement, y_movement);
+
+    // if the player has the hammer, than make it walk with it
+    // just setting the position of the hammer to the position of the player
+    // we gives the hammer time to draw the 'hit' so that's why we got a timer here
+    if (is_with_hammer && (elapsed_time - hammer_hit_duration) >= HAMMER_DURATION_IN_TICKS){
+        set_hammer_player_position();
+    }
 
     // if there is movement on the y axis
     // and the object is the player
@@ -690,6 +767,25 @@ void move_object(gameObject* obj, int x_movement, int y_movement){
         // If the new movement is valid (1 = no collisions)
         if (check_movement_map){
             add_to_object_position(obj, x_movement, y_movement);
+        }
+    }
+}
+
+// Makes the hammer hit!
+void hammer_hit(){
+    int i = 0;
+    move_object(&hammerObject, 0, 1);
+    // Setting the start of the hit
+    hammer_hit_duration = elapsed_time;
+    // Check for collision with the barrels
+    for (i = 0; i < MAX_BARRELS_OBJECT; i++){
+        if (check_collision_with_rectangle(&hammerObject, barrels_array[i]->obj)){
+            delete_barrel(i);
+            hammer_hits_left--;
+            // if we ran out of hits, spawn a new hammer
+            if (hammer_hits_left <= 0){
+                reset_hammer();
+            }
         }
     }
 }
@@ -922,7 +1018,9 @@ void handle_player_movement(int input_scan_code){
     // 2: if the player is not near a ladder and there is no ladder below him
     // we are not on a ladder
     if (collision_result_map && !check_movement_ladder_inside ||
-    (!check_movement_ladder_inside && !check_movement_ladder_below)) on_top_ladder = 0;
+    (!check_movement_ladder_inside && !check_movement_ladder_below)) {
+        on_top_ladder = 0;
+    }
 
     // if the player is not grounded we dont want it to control mario
     // or is the player standing near a ladder
@@ -931,6 +1029,7 @@ void handle_player_movement(int input_scan_code){
             // if the player is near a ladder
             if (check_movement_ladder_inside){
                 on_top_ladder = 1;
+                is_with_hammer = 0;
                 move_object(&playerObject, 0, -1);
             }else {
                 // if the player is not near a ladder
@@ -939,8 +1038,12 @@ void handle_player_movement(int input_scan_code){
                 player_jump();
             }
         }else if ((input_scan_code == ARROW_RIGHT) || (input_scan_code == KEY_D)){
+            // Movement direction is to the right
+            player_movement_direction = 1;
             move_object(&playerObject, 1, 0);
         }else if ((input_scan_code == ARROW_LEFT) || (input_scan_code == KEY_A)){
+            // Movement direction it to the left
+            player_movement_direction = -1;
             move_object(&playerObject, -1, 0);
         }else if ((input_scan_code == ARROW_DOWN) || (input_scan_code == KEY_S)){
             // if the player is above a ladder or on top of a ladder
@@ -950,6 +1053,10 @@ void handle_player_movement(int input_scan_code){
             if ((check_movement_ladder_inside && on_top_ladder) || check_movement_ladder_below){
                 on_top_ladder = 1;
                 move_object(&playerObject, 0, 1);
+            }
+        }else if (input_scan_code == KEY_SPACE){
+            if (is_with_hammer){
+                hammer_hit();
             }
         }
     }
@@ -1004,6 +1111,7 @@ void updater(){
 
         // if there is a input from the player we need to handle it
         for (i = 0; i < input_queue_received; i++){
+            // Handle the input from the player
             handle_player_movement(input_queue[i]);
             // Check for collision with the princess
             if (check_collision_with_rectangle(&playerObject, &princessObject)){
@@ -1013,7 +1121,6 @@ void updater(){
             if (check_collision_with_rectangle(&playerObject, &hammerObject)){
                 is_with_hammer = 1;
             }
-
         }
         // Resetting the input queue vars for next time
         input_queue_received = 0;
@@ -1067,7 +1174,9 @@ void updater(){
         insert_model_to_draft(&princessObject);
         insert_model_to_draft(&playerObject);
         insert_model_to_draft(&kongObject);
-        insert_model_to_draft(&hammerObject);
+        // Only if the hammer exist in the map we want to draw it
+        if (is_hammer_exist)
+            insert_model_to_draft(&hammerObject);
         insert_clock_to_draft();
         inesrt_player_life_to_draft();
 
@@ -1105,11 +1214,15 @@ void load_level(){
     // Reset clock
     clock_seconds = 0;
     clock_minutes = 0;
+
+    reset_hammer();
 }
 
 // Manages different game things and thangs
 void manager(){
     int last_min = 0;
+
+    load_level();
 
     while (TRUE){
         // if the player ran out of lives
