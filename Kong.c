@@ -1100,6 +1100,25 @@ void insert_clock_to_draft(){
     display_draft[0][SCREEN_WIDTH - 1] = c_sec_l;
 }
 
+void load_level(){
+    int i = 0;
+
+    // Delete all barrels
+    for (i = 0; i < MAX_BARRELS_OBJECT; i++){
+        delete_barrel(i);
+    }
+
+    // Reset player postion
+    playerObject.top_left_point.x = PLAYER_START_POS_X;
+    playerObject.top_left_point.y = PLAYER_START_POS_Y;
+
+    // Reset clock
+    clock_seconds = 0;
+    clock_minutes = 0;
+
+    reset_hammer();
+}
+
 // Handles the updating of stuff and shit
 void updater(){
 
@@ -1129,6 +1148,11 @@ void updater(){
         wipe_display_draft();
 
         insert_ladders_to_map(game_level);
+
+        if (!check_collision_with_rectangle(&playerObject, &screenObject)){
+            player_lives--;
+            load_level();
+        }
 
         // if the gravity timer is dont we need to apply gravity
         if (gravity_ticks <= 0){
@@ -1197,25 +1221,6 @@ void receiver(){
         // Saving how many recevied input we got saved
         input_queue_received++;
     }
-}
-
-void load_level(){
-    int i = 0;
-
-    // Delete all barrels
-    for (i = 0; i < MAX_BARRELS_OBJECT; i++){
-        delete_barrel(i);
-    }
-
-    // Reset player postion
-    playerObject.top_left_point.x = PLAYER_START_POS_X;
-    playerObject.top_left_point.y = PLAYER_START_POS_Y;
-
-    // Reset clock
-    clock_seconds = 0;
-    clock_minutes = 0;
-
-    reset_hammer();
 }
 
 // Manages different game things and thangs
