@@ -138,8 +138,12 @@ int bg_pid;
 /* Drawer vars */
 // the whole display is represented here: 1 pixel = 1 cell
 char display[SCREEN_SIZE + 1];
+// Saves the color of each cell in the display
+char display_color[SCREEN_SIZE + 1];
 // a draft of the display, later we copy the draft to the display array
 char display_draft[SCREEN_HEIGHT][SCREEN_WIDTH];
+// a draft of the display color
+char display_draft_color[SCREEN_HEIGHT][SCREEN_WIDTH];
 
 /* Game vars */
 int game_level = 1;
@@ -228,6 +232,7 @@ int spawn_falling_barrel_speed_in_ticks = 4 * 18;
 /* Ladders vars */
 // Using a pointer to know what (level) ladders to draw
 char* ladder_map_ptr = NULL;
+gameObject laddersObject = {"Ladders", {0,0}, SCREEN_WIDTH, SCREEN_HEIGHT, (char**) ladders_level_1};
 
 /* Gravity vars */
 // Apply gravity every number of ticks
@@ -241,7 +246,45 @@ char saved_color_byte;
 // Is the user exited the game
 int game_exited = 0;
 // Screen game object, used to detect if the objects are inside it
-gameObject screenObject = {"Screen", {0,0}, SCREEN_WIDTH, SCREEN_HEIGHT};
+gameObject screenObject = {"Screen", {0,0}, SCREEN_WIDTH, SCREEN_HEIGHT, (char**) map_1};
+
+void paint_model(gameObject* obj , char color_byte, int ignore_empty){
+    int i = 0;
+    int j = 0;
+    int k = 0;
+    int p = 0;
+    char currentModelPixel;
+
+    position top_left = obj->top_left_point;
+    int model_height = obj->height;
+    int model_width = obj->width;
+    char* model = (char*) obj->model;
+    
+    // Init the printing to screen
+    asm{
+        MOV AX, 0B800h
+        MOV ES, AX
+        MOV DI, 0
+    }
+
+    for (i = top_left.y; i < top_left.y + model_height; i++){
+        for (j = top_left.x; j < top_left.x + model_width; j++){
+            currentModelPixel = model[p];
+            p++;
+            if ((int) currentModelPixel == 32 && ignore_empty) continue;
+
+            k = i * SCREEN_WIDTH + j;
+            k *= 2;
+            asm{
+                MOV AL, BYTE PTR currentModelPixel
+                MOV AH, BYTE PTR color_byte
+
+                MOV DI, WORD PTR k
+                MOV ES:[DI], AX
+            }
+        }
+    }
+}
 
 // This function is used to better print to the console
 // Avoiding flickering, more color options and shit...
@@ -249,9 +292,12 @@ void print_to_screen(){
     int i = 0;
     int j = 0;
     char current_pixel;
+    char current_color;
+
     // The default color byte that we use to print to the console
     // the default is white text with black background
-    // 15 = 00001111
+    // 15 = 00001111 = white text black bg
+    // 12 = 00001100 = red text black bg
     char default_color_byte = 15;
 
     // Init the screen to top left point
@@ -265,12 +311,14 @@ void print_to_screen(){
         for (j = 0; j < SCREEN_WIDTH; j++){
             // Getting the char we need to print
             current_pixel = display[i * SCREEN_WIDTH + j];
+            current_color = display_color[i * SCREEN_WIDTH + j];
 
             // Printing the char to the console
             // and advancing the index to the next cell of the console
             asm{
                 MOV AL, BYTE PTR current_pixel
-                MOV AH, BYTE PTR default_color_byte
+                //MOV AH, BYTE PTR default_color_byte
+                MOV AH, BYTE PTR current_color
 
                 MOV ES:[DI], AX
                 ADD DI, 2
@@ -287,6 +335,7 @@ void wipe_entire_screen(){
     for (i = 0; i < SCREEN_HEIGHT; i++){
         for (j = 0; j < SCREEN_WIDTH; j++){
             display[i * SCREEN_WIDTH + j] = ' ';
+            display_color[i * SCREEN_WIDTH + j] = 15;
         }
     }
 
@@ -467,6 +516,10 @@ void drawer(){
         // if the game was exited we dont want to keep drawing to the screen
         if (game_exited) return;
         print_to_screen();
+        // 00001100
+        //paint_model(&screenObject, 15, 0);
+        //paint_model(&laddersObject, 6, 1);
+        //paint_model(&playerObject, 1, 0);
     }
 }
 
@@ -877,6 +930,7 @@ void save_display_draft(){
     for (i = 0; i < SCREEN_HEIGHT; i++){
         for (j = 0; j < SCREEN_WIDTH; j++){
             display[SCREEN_WIDTH * i + j] = display_draft[i][j];
+            display_color[SCREEN_WIDTH * i + j] = display_draft_color[i][j];
         }
     }
     // Setting the null char (the last char of the array)
@@ -907,13 +961,15 @@ void insert_ladders_to_map(int level){
             // if it's a ladder we want to add it to the draft
             if (currentPixel == '|' || currentPixel == '_'){
                 display_draft[i][j] = currentPixel;
+                // light gray color for the ladders
+                display_draft_color[i][j] = 7;
             }
         }
     }
 }
 
 // Used to save models of game objects to the display draft
-void insert_model_to_draft(gameObject* gameObj){
+void insert_model_to_draft(gameObject* gameObj, char color_byte){
     // To iterate the display draft height
     int i = 0;
     // To iterate the display draft width
@@ -943,19 +999,21 @@ void insert_model_to_draft(gameObject* gameObj){
     for (i = top_left_y; i < top_left_y + model_height; i++){
         for (j = top_left_x; j < top_left_x + model_width; j++){
             display_draft[i][j] = objectModel[k];
+            display_draft_color[i][j] = color_byte;
             k++;
         }
     }
 }
 
 // Refills the dispaly draft with map
-void refill_display_draft(char map[SCREEN_HEIGHT][SCREEN_WIDTH]){
+void refill_display_draft(char map[SCREEN_HEIGHT][SCREEN_WIDTH], char color_byte){
     int i = 0;
     int j = 0;
 
     for (i = 0; i < SCREEN_HEIGHT; i++){
         for (j = 0; j < SCREEN_WIDTH; j++){
             display_draft[i][j] = map[i][j];
+            display_draft_color[i][j] = color_byte;
         }
     }
 }
@@ -1078,6 +1136,8 @@ void inesrt_player_life_to_draft(){
 
     for (i = 0; i < player_lives; i++){
         display_draft[0][SCREEN_WIDTH - clock_offset - i] = '$';
+        // red color
+        display_draft_color[0][SCREEN_WIDTH - clock_offset - i] = 4;
     }
 }
 
@@ -1155,6 +1215,10 @@ void updater(){
 
     while (TRUE){
         received_msg = receive();
+        // Msg #2 = Game Started
+        if (received_msg == 1){
+            reset_hammer();
+        }
         // Msg #2 = Delete all barrels
         if (received_msg == 2){
             // Delete all barrels
@@ -1182,7 +1246,7 @@ void updater(){
             input_queue_received = 0;
             input_queue_tail = 0;
 
-            refill_display_draft(map_1);
+            refill_display_draft(map_1, 12);
 
             insert_ladders_to_map(game_level);
 
@@ -1223,7 +1287,9 @@ void updater(){
                 // Only if the barrel exists
                 if (barrels_array[i]){
                     if (barrels_array[i]->obj){
-                        insert_model_to_draft(barrels_array[i]->obj);
+                        if (!barrels_array[i]->is_falling_barrel){
+                            insert_model_to_draft(barrels_array[i]->obj, 3);
+                        } else insert_model_to_draft(barrels_array[i]->obj, 9);
                     }
                 }
             }
@@ -1245,18 +1311,18 @@ void updater(){
             display_draft[0][0] = (barrels_array_index / 10 % 10) + '0';
             display_draft[0][1] = (barrels_array_index % 10) + '0';
 
-            insert_model_to_draft(&princessObject);
-            insert_model_to_draft(&playerObject);
-            insert_model_to_draft(&kongObject);
+            insert_model_to_draft(&princessObject, 13);
+            insert_model_to_draft(&playerObject, 14);
+            insert_model_to_draft(&kongObject, 6);
             // Only if the hammer exist in the map we want to draw it
             if (is_hammer_exist)
-                insert_model_to_draft(&hammerObject);
+                insert_model_to_draft(&hammerObject, 15);
             insert_clock_to_draft();
             inesrt_player_life_to_draft();
 
             save_display_draft();
         }else if (gameState == InMenu){
-            refill_display_draft(menu);
+            refill_display_draft(menu, 6);
             save_display_draft();
         }
     }
@@ -1280,6 +1346,7 @@ void receiver(){
 // Manages different game things and thangs
 void manager(){
     int last_min = 0;
+    GameState last_gameState = -1;
 
     while (TRUE){
         // if the player ran out of lives
@@ -1317,6 +1384,14 @@ void manager(){
         // Saving the last minute
         if (last_min != clock_minutes){
             last_min = clock_minutes;
+        }
+
+        if (last_gameState != gameState){
+            if (gameState == InGame){
+                send(updater_pid, 1);
+            }
+
+            last_gameState = gameState;
         }
     }
 }
