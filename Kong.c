@@ -44,6 +44,15 @@
 
 extern struct intmap far *sys_imp;
 
+void stop_processes();
+void start_processes();
+
+/* Enums */
+typedef enum gameState{
+    InGame = 0,
+    InMenu = 1
+} GameState;
+
 /* Structs */
 // Used to save the position of elements
 typedef struct Position{
@@ -121,6 +130,10 @@ int input_queue_tail = 0;
 /* PIDs vars */
 int receiver_pid;
 int time_handler_pid;
+int updater_pid;
+int drawer_pid;
+int manager_pid;
+int bg_pid;
 
 /* Drawer vars */
 // the whole display is represented here: 1 pixel = 1 cell
@@ -132,6 +145,7 @@ char display_draft[SCREEN_HEIGHT][SCREEN_WIDTH];
 int game_level = 1;
 int mario_got_to_princess = 0;
 int player_lives = PLAYER_LIFE_COUNT;
+enum GameState gameState = InMenu;
 
 /* Game Object vars */
 // Used the save all the current game objects
@@ -145,7 +159,7 @@ char mario_model[3][3] =
     "| |"
 };
 // The game object of the player
-gameObject playerObject = {"Player", {PLAYER_START_POS_X, PLAYER_START_POS_Y}, 3, 3, mario_model};
+gameObject playerObject = {"Player", {PLAYER_START_POS_X, PLAYER_START_POS_Y}, 3, 3, (char**) mario_model};
 // Saves the time that the player jumped (used to know if to apply gravity to the player)
 int air_duration_elapsed = 0;
 // is the player on top of a ladder
@@ -161,7 +175,7 @@ char princess_model[2][2] = {
     "$$"
 };
 // The game object of the princess
-gameObject princessObject = {"Princess", {35 ,2}, 2, 2, princess_model};
+gameObject princessObject = {"Princess", {35 ,2}, 2, 2, (char**) princess_model};
 
 /* Kong vars */
 char kong_model[3][3] = 
@@ -171,7 +185,7 @@ char kong_model[3][3] =
     "V V"
 };
 // The game object of kong
-gameObject kongObject = {"Kong", {22, 5}, 3, 3, kong_model};
+gameObject kongObject = {"Kong", {22, 5}, 3, 3, (char**) kong_model};
 
 /* Hammer vars */
 char hammer_model[1][2] = 
@@ -179,7 +193,7 @@ char hammer_model[1][2] =
     "%%"
 };
 // The game object of THE HAMMER
-gameObject hammerObject = {"Hammer", {37, 20}, 2, 1, hammer_model};
+gameObject hammerObject = {"Hammer", {37, 20}, 2, 1, (char**) hammer_model};
 // Count how many hits left to the hammer
 int hammer_hits_left = HAMMER_MAX_HITS;
 // The time it takes to recover from a hit
@@ -206,8 +220,6 @@ int spawn_barrel_timer = 0;
 int spawn_barrel_speed_in_ticks = 6 * 18;
 // How long do we wait between moving the barrels
 int barrel_movement_speed_in_ticks = 5;
-// Holds all the locations of barrels
-char barrels_location[SCREEN_HEIGHT][SCREEN_WIDTH];
 // Timer to know when to spawn a new falling barrel
 int spawn_falling_barrel_timer = 0;
 // How long do we wait between spawning a new falling barrel
@@ -230,18 +242,6 @@ char saved_color_byte;
 int game_exited = 0;
 // Screen game object, used to detect if the objects are inside it
 gameObject screenObject = {"Screen", {0,0}, SCREEN_WIDTH, SCREEN_HEIGHT};
-
-// Resets the barrels map
-void reset_barrels_location_map(){
-    int i = 0;
-    int j = 0;
-
-    for (i = 0; i < SCREEN_HEIGHT; i++){
-        for (j = 0; j < SCREEN_WIDTH; j++){
-            barrels_location[i][j] = ' ';
-        }
-    }
-}
 
 // This function is used to better print to the console
 // Avoiding flickering, more color options and shit...
@@ -425,7 +425,7 @@ void time_handler(){
 
         // Updating the timers of all the barrel's movement
         for (i = 0; i < MAX_BARRELS_OBJECT; i++){
-            if (barrels_array[i] != NULL){
+            if (barrels_array[i]){
                 barrels_array[i]->movement_ticks -= deltaTime;
                 // if it's not the first level
                 if (game_level > 1){
@@ -475,10 +475,12 @@ void drawer(){
 void delete_barrel(int index_in_array){
     barrel* barrelToDelete = barrels_array[index_in_array];
 
+    // Setting the index to be free so we can spawn more barrels
     barrels_array[index_in_array] = NULL;
-    // wtf ? weird shit happens
-    //freemem(&barrelToDelete->obj, sizeof(gameObject));
-    //freemem(&barrelToDelete, sizeof(barrel));
+
+    // First freeing the gameobject memory than the barrel
+    freemem(barrelToDelete->obj, sizeof(struct GameObject));
+    freemem(barrelToDelete, sizeof(struct Barrel));
 }
 
 // Checks a collision between 2 game objects
@@ -489,9 +491,6 @@ int check_collision_with_rectangle(gameObject* obj_a, gameObject* obj_b){
     // Getting the dimensions of the game object's model
     int model_height = obj_a->height;
     int model_width = obj_a->width;
-
-    int h = 0;
-    int w = 0;
 
     int obj_b_x = obj_b->top_left_point.x;
     int obj_b_y = obj_b->top_left_point.y;
@@ -526,9 +525,6 @@ void check_collision_with_a_barrel(gameObject* obj, int index_in_array){
     // Getting the dimensions of the game object's model
     int model_height = obj->height;
     int model_width = obj->width;
-
-    int h = 0;
-    int w = 0;
 
     barrel* barrel = barrels_array[index_in_array];
     int barrel_x = barrel->obj->top_left_point.x;
@@ -802,47 +798,48 @@ void player_jump(){
 // Moves all the barrels in the map
 void move_barrels(){
     int i = 0;
-    int delta_ticks = 0;
     barrel* barrel;
 
     for (i = 0; i < MAX_BARRELS_OBJECT; i++){
         // if the barrel exist
-        if (barrels_array[i] != NULL && barrels_array[i]->obj != NULL){
-            barrel = barrels_array[i];
-            // if it's time to move the barrel
-            if (barrel->movement_ticks <= 0) {
-                // Resetting the barrel's movement timer
-                barrel->movement_ticks = barrel_movement_speed_in_ticks;
-                // if the barrel in on the platform (grounded)
-                // we want a movement on the x axis only if the barrel is grounded
-                if (!check_collision_with_map(barrel->obj, 0, 1)){
-                    barrel->is_grounded = 1;
-                    move_object(barrel->obj, barrel->movement_direction, 0);
-                }else {
-                    // if the barrel was on top of a platform
-                    // and now it's falling, we want to change the direction of movement
-                    if (barrel->is_grounded){
-                        barrel->is_grounded = 0;
-                        barrel->movement_direction *= -1;
+        if (barrels_array[i]){
+            if (barrels_array[i]->obj){
+                barrel = barrels_array[i];
+                // if it's time to move the barrel
+                if (barrel->movement_ticks <= 0) {
+                    // Resetting the barrel's movement timer
+                    barrel->movement_ticks = barrel_movement_speed_in_ticks;
+                    // if the barrel in on the platform (grounded)
+                    // we want a movement on the x axis only if the barrel is grounded
+                    if (!check_collision_with_map(barrel->obj, 0, 1)){
+                        barrel->is_grounded = 1;
+                        move_object(barrel->obj, barrel->movement_direction, 0);
+                    }else {
+                        // if the barrel was on top of a platform
+                        // and now it's falling, we want to change the direction of movement
+                        if (barrel->is_grounded){
+                            barrel->is_grounded = 0;
+                            barrel->movement_direction *= -1;
+                        }
                     }
                 }
-            }
 
-            // if the barrel is a falling barrel
-            if (barrel->is_falling_barrel){
-                if (barrel->falling_ticks <= 0){
-                    barrel->is_grounded = 0;
-                    barrel->movement_direction *= -1;
-                    add_to_object_position(barrel->obj, 0, 1);
-                    barrel->falling_ticks = rand() % (FALLING_BARREL_MAX_FALL + 1) + spawn_falling_barrel_speed_in_ticks;
+                // if the barrel is a falling barrel
+                if (barrel->is_falling_barrel){
+                    if (barrel->falling_ticks <= 0){
+                        barrel->is_grounded = 0;
+                        barrel->movement_direction *= -1;
+                        add_to_object_position(barrel->obj, 0, 1);
+                        barrel->falling_ticks = rand() % (FALLING_BARREL_MAX_FALL + 1) + spawn_falling_barrel_speed_in_ticks;
+                    }
                 }
-            }
-            // Check for collision with the player
-            check_collision_with_a_barrel(&playerObject, i);
+                // Check for collision with the player
+                check_collision_with_a_barrel(&playerObject, i);
 
-            // if the barrel does not collide with the screen
-            // than it's outside the screen so we want to delete it
-            if (!check_collision_with_rectangle(barrel->obj, &screenObject)) delete_barrel(i);
+                // if the barrel does not collide with the screen
+                // than it's outside the screen so we want to delete it
+                if (!check_collision_with_rectangle(barrel->obj, &screenObject)) delete_barrel(i);
+            }
         }
     }
 }
@@ -862,10 +859,12 @@ void apply_gravity_to_game_objects(){
     }
 
     for (i = 0; i < MAX_BARRELS_OBJECT; i++){
-        if (barrels_array[i] != NULL){
-            move_object(barrels_array[i]->obj, 0, 1);
-            // if the barrel it outside the screen, delete it
-            if (!check_collision_with_rectangle(barrels_array[i]->obj, &screenObject)) delete_barrel(i);
+        if (barrels_array[i]){
+            if (barrels_array[i]->obj){
+                move_object(barrels_array[i]->obj, 0, 1);
+                // if the barrel it outside the screen, delete it
+                if (!check_collision_with_rectangle(barrels_array[i]->obj, &screenObject)) delete_barrel(i);
+            }
         }
     }
 }
@@ -934,7 +933,7 @@ void insert_model_to_draft(gameObject* gameObj){
     int model_width = gameObj->width;
 
     // Getting the object's model
-    char* objectModel = gameObj->model;
+    char* objectModel = (char*) gameObj->model;
 
     // We need to start saving to the draft from the
     // top left point (kinda the position of the object)
@@ -949,14 +948,14 @@ void insert_model_to_draft(gameObject* gameObj){
     }
 }
 
-// "Reset" the display_draft so we can use it again
-void wipe_display_draft(){
+// Refills the dispaly draft with map
+void refill_display_draft(char map[SCREEN_HEIGHT][SCREEN_WIDTH]){
     int i = 0;
     int j = 0;
 
     for (i = 0; i < SCREEN_HEIGHT; i++){
         for (j = 0; j < SCREEN_WIDTH; j++){
-            display_draft[i][j] = map_1[i][j];
+            display_draft[i][j] = map[i][j];
         }
     }
 }
@@ -968,19 +967,20 @@ void create_barrel(int x, int y, int movement, int gravity, int is_falling, int 
 
     // if there is no place in the array for the barrel
     // we dont want to create it because we are full
-    if (barrels_array[barrels_array_index] != NULL) return;
+    if (barrels_array[barrels_array_index]) return;
 
-    barrel = getmem(sizeof(barrel));
-    barrelObj = getmem(sizeof(gameObject));
+    // Allocate memory
+    barrel = (struct Barrel*) getmem(sizeof(struct Barrel));
+    barrelObj = (struct GameObject*) getmem(sizeof(struct GameObject));
 
     // Failed to allocate memory
-    if (barrel == NULL || barrelObj == NULL) return;
+    if (!barrel || !barrelObj) return;
 
     // Init the game object of the barrel
     strcpy(barrelObj->label, "Barrel");
     if (!is_falling)
-        barrelObj->model = barrel_model;
-    else barrelObj->model = falling_barrel_model;
+        barrelObj->model = (char**) barrel_model;
+    else barrelObj->model = (char**) falling_barrel_model;
     barrelObj->top_left_point.x = x;
     barrelObj->top_left_point.y = y;
     barrelObj->width = 2;
@@ -1100,13 +1100,40 @@ void insert_clock_to_draft(){
     display_draft[0][SCREEN_WIDTH - 1] = c_sec_l;
 }
 
+// Init all the vars
+void init_vars(){
+    clock_ticks = 0;
+    clock_seconds = 0;
+    clock_minutes = 0;
+    elapsed_time = 0;
+
+    input_queue_received = 0;
+    input_queue_tail = 0;
+
+    mario_got_to_princess = 0;
+    player_lives = PLAYER_LIFE_COUNT;
+    air_duration_elapsed = 0;
+    on_top_ladder = 0;
+    is_with_hammer = 0;
+    player_movement_direction = 0;
+    hammer_hits_left = HAMMER_MAX_HITS;
+    hammer_hit_duration = 0;
+    is_hammer_exist = 0;
+
+    barrels_array_index = 0;
+    spawn_barrel_timer = 0;
+    spawn_barrel_speed_in_ticks = 6 * 18;
+    barrel_movement_speed_in_ticks = 5;
+    spawn_falling_barrel_timer = 0;
+    spawn_falling_barrel_speed_in_ticks = 4 * 18;
+
+    apply_gravity_every_ticks = 5;
+    gravity_ticks = 5;
+}
+
+// Loda the level
 void load_level(){
     int i = 0;
-
-    // Delete all barrels
-    for (i = 0; i < MAX_BARRELS_OBJECT; i++){
-        delete_barrel(i);
-    }
 
     // Reset player postion
     playerObject.top_left_point.x = PLAYER_START_POS_X;
@@ -1124,87 +1151,114 @@ void updater(){
 
     int i = 0;
     int j = 0;
+    int received_msg;
 
     while (TRUE){
-        receive();
-
-        // if there is a input from the player we need to handle it
-        for (i = 0; i < input_queue_received; i++){
-            // Handle the input from the player
-            handle_player_movement(input_queue[i]);
-            // Check for collision with the princess
-            if (check_collision_with_rectangle(&playerObject, &princessObject)){
-                mario_got_to_princess = 1;
-            }
-            // Check for collision with the hammer
-            if (check_collision_with_rectangle(&playerObject, &hammerObject)){
-                is_with_hammer = 1;
-            }
-        }
-        // Resetting the input queue vars for next time
-        input_queue_received = 0;
-        input_queue_tail = 0;
-
-        wipe_display_draft();
-
-        insert_ladders_to_map(game_level);
-
-        if (!check_collision_with_rectangle(&playerObject, &screenObject)){
-            player_lives--;
-            load_level();
-        }
-
-        // if the gravity timer is dont we need to apply gravity
-        if (gravity_ticks <= 0){
-            apply_gravity_to_game_objects();
-            gravity_ticks = apply_gravity_every_ticks;
-        }
-
-        // if the spawning barrel is dont we need to spawn a new one
-        if (spawn_barrel_timer <= 0){
-            // We create a new barrel at kong's position
-            // and init it with the speed of the movement and speed of gravity
-            create_barrel(kongObject.top_left_point.x + 1, kongObject.top_left_point.y + 2,
-            barrel_movement_speed_in_ticks, 0, 0, 0);
-            // Resetting the spawning barrel timer
-            spawn_barrel_timer = spawn_barrel_speed_in_ticks;
-        }
-
-        if (spawn_falling_barrel_timer <= 0 && game_level > 1){
-            create_barrel(kongObject.top_left_point.x + 1, kongObject.top_left_point.y + 2,
-            barrel_movement_speed_in_ticks, 0, 1, FALLING_BARREL_SPAWN_IN_TICKS);
-            // Resetting the spawning falling barrel timer
-            spawn_falling_barrel_timer = spawn_falling_barrel_speed_in_ticks;
-        }
-
-        // Inserts the barrel's model to the dispaly draft
-        for (i = 0; i < MAX_BARRELS_OBJECT; i++){
-            // Only if the barrel exists
-            if (barrels_array[i] != NULL && barrels_array[i]->obj != NULL){
-                insert_model_to_draft(barrels_array[i]->obj);
+        received_msg = receive();
+        // Msg #2 = Delete all barrels
+        if (received_msg == 2){
+            // Delete all barrels
+            for (i = 0; i < MAX_BARRELS_OBJECT; i++){
+                if (barrels_array[i])
+                    delete_barrel(i);
             }
         }
 
-        // Move the barrels
-        move_barrels();
-
-        // Check for collisions with barrels
-        for (j = 0; j < MAX_BARRELS_OBJECT; j++){
-            if (barrels_array[j] != NULL && barrels_array[i]->obj != NULL){
-                check_collision_with_a_barrel(&playerObject, j);
+        if (gameState == InGame){
+            // if there is a input from the player we need to handle it
+            for (i = 0; i < input_queue_received; i++){
+                // Handle the input from the player
+                handle_player_movement(input_queue[i]);
+                // Check for collision with the princess
+                if (check_collision_with_rectangle(&playerObject, &princessObject)){
+                    mario_got_to_princess = 1;
+                }
+                // Check for collision with the hammer
+                if (check_collision_with_rectangle(&playerObject, &hammerObject)){
+                    is_with_hammer = 1;
+                }
             }
+            // Resetting the input queue vars for next time
+            input_queue_received = 0;
+            input_queue_tail = 0;
+
+            refill_display_draft(map_1);
+
+            insert_ladders_to_map(game_level);
+
+            if (!check_collision_with_rectangle(&playerObject, &screenObject)){
+                player_lives--;
+                load_level();
+            }
+
+            // if the gravity timer is dont we need to apply gravity
+            if (gravity_ticks <= 0){
+                apply_gravity_to_game_objects();
+                gravity_ticks = apply_gravity_every_ticks;
+            }
+
+            display_draft[0][4] = (spawn_barrel_timer / 100 % 10) + '0';
+            display_draft[0][5] = (spawn_barrel_timer / 10 % 10) + '0';
+            display_draft[0][6] = (spawn_barrel_timer % 10) + '0';
+
+            // if the spawning barrel is dont we need to spawn a new one
+            if (spawn_barrel_timer <= 0){
+                // We create a new barrel at kong's position
+                // and init it with the speed of the movement and speed of gravity
+                create_barrel(kongObject.top_left_point.x + 1, kongObject.top_left_point.y + 2,
+                barrel_movement_speed_in_ticks, 0, 0, 0);
+                // Resetting the spawning barrel timer
+                spawn_barrel_timer = spawn_barrel_speed_in_ticks;
+            }
+
+            if (spawn_falling_barrel_timer <= 0 && game_level > 1){
+                create_barrel(kongObject.top_left_point.x + 1, kongObject.top_left_point.y + 2,
+                barrel_movement_speed_in_ticks, 0, 1, FALLING_BARREL_SPAWN_IN_TICKS);
+                // Resetting the spawning falling barrel timer
+                spawn_falling_barrel_timer = spawn_falling_barrel_speed_in_ticks;
+            }
+
+            // Inserts the barrel's model to the dispaly draft
+            for (i = 0; i < MAX_BARRELS_OBJECT; i++){
+                // Only if the barrel exists
+                if (barrels_array[i]){
+                    if (barrels_array[i]->obj){
+                        insert_model_to_draft(barrels_array[i]->obj);
+                    }
+                }
+            }
+
+            // Move the barrels
+            move_barrels();
+
+            // Check for collisions with barrels
+            for (j = 0; j < MAX_BARRELS_OBJECT; j++){
+                // if the barrel exists
+                if (barrels_array[j]){
+                    // if the barrel's game object exists
+                    if (barrels_array[i]->obj){
+                        check_collision_with_a_barrel(&playerObject, j);
+                    }
+                }
+            }
+
+            display_draft[0][0] = (barrels_array_index / 10 % 10) + '0';
+            display_draft[0][1] = (barrels_array_index % 10) + '0';
+
+            insert_model_to_draft(&princessObject);
+            insert_model_to_draft(&playerObject);
+            insert_model_to_draft(&kongObject);
+            // Only if the hammer exist in the map we want to draw it
+            if (is_hammer_exist)
+                insert_model_to_draft(&hammerObject);
+            insert_clock_to_draft();
+            inesrt_player_life_to_draft();
+
+            save_display_draft();
+        }else if (gameState == InMenu){
+            refill_display_draft(menu);
+            save_display_draft();
         }
-
-        insert_model_to_draft(&princessObject);
-        insert_model_to_draft(&playerObject);
-        insert_model_to_draft(&kongObject);
-        // Only if the hammer exist in the map we want to draw it
-        if (is_hammer_exist)
-            insert_model_to_draft(&hammerObject);
-        insert_clock_to_draft();
-        inesrt_player_life_to_draft();
-
-        save_display_draft();
     }
 }
 
@@ -1227,8 +1281,6 @@ void receiver(){
 void manager(){
     int last_min = 0;
 
-    load_level();
-
     while (TRUE){
         // if the player ran out of lives
         if (player_lives <= 0){
@@ -1249,8 +1301,9 @@ void manager(){
                 game_level++;
                 // The clock is resetted to 0:0 so the last minute needs to be 0
                 last_min = 0;
+                send(updater_pid, 2);
                 // load the level
-                load_level();
+                //load_level();
             }else {
                 // Game won!
             }
@@ -1270,26 +1323,26 @@ void manager(){
 
 // Starts all the processes of the game
 void start_processes(){
-    int up_pid, draw_pid, recv_pid, timer_pid, manager_pid;
+    int up_pid, draw_pid, recv_pid, timer_pid, mang_pid;
 
     resume(timer_pid = create(time_handler, INITSTK, INITPRIO, "KONG: TIME HANDLER", 0));
     resume(draw_pid = create(drawer, INITSTK, INITPRIO + 1, "KONG: DRAWER", 0));
     resume(recv_pid = create(receiver, INITSTK, INITPRIO + 3, "KONG: RECEIVER", 0));
     resume(up_pid = create(updater, INITSTK, INITPRIO, "KONG: UPDATER", 0));
-    resume(manager_pid = create(manager, INITSTK, INITPRIO, "KONG: MANAGER", 0));
+    resume(mang_pid = create(manager, INITSTK, INITPRIO, "KONG: MANAGER", 0));
 
-    // Sets the id of the receiver so we can send msgs to it
+    // Saving the pids of the process for global use
     receiver_pid = recv_pid;
-
-    // Sets the id of the time handler so we can send msgs to it
     time_handler_pid = timer_pid;
+    updater_pid = up_pid;
+    drawer_pid = draw_pid;
+    manager_pid = mang_pid;
 
     // Schedules the drawer and updater
     schedule(3, CYCLE_DRAWER, draw_pid, 0, up_pid, CYCLE_UPDATER, 0, CYCLE_UPDATER, manager_pid);
 }
 
 xmain(){
-    
     // Saves the color byte
     save_out_to_screen();
 
