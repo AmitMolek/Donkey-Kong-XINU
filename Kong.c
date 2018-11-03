@@ -50,7 +50,8 @@ void start_processes();
 /* Enums */
 typedef enum gameState{
     InGame = 0,
-    InMenu = 1
+    InMenu = 1,
+    InGameOver = 2
 } GameState;
 
 /* Structs */
@@ -443,68 +444,71 @@ void time_handler(){
     int deltaTime_counter = 0;
     int updater_last_call = 0;
     int deltaSeconds = 0;
+    int received_msg;
 
     int i = 0;
 
     while(TRUE){
         // Waiting for the time routine to wake up this process
         // Basically waiting for a tick to pass
-        receive();
+        received_msg = receive();
 
-        /* Time tracking */
-        // delta time is the measurement of the time between calls
-        deltaTime = elapsed_time - updater_last_call;
-        // delta time counter is the counter of how many ticks passed
-        deltaTime_counter += deltaTime;
-        // Saving the counter to global use
-        clock_ticks = deltaTime_counter;
-        // saving the last call of the updater to measure the delta time
-        updater_last_call = elapsed_time;
+        if (gameState == InGame){
+            /* Time tracking */
+            // delta time is the measurement of the time between calls
+            deltaTime = elapsed_time - updater_last_call;
+            // delta time counter is the counter of how many ticks passed
+            deltaTime_counter += deltaTime;
+            // Saving the counter to global use
+            clock_ticks = deltaTime_counter;
+            // saving the last call of the updater to measure the delta time
+            updater_last_call = elapsed_time;
 
-        // Updating the timer of the gravity
-        gravity_ticks -= deltaTime;
-        // Updating the timer of the spawning of barrels
-        spawn_barrel_timer -= deltaTime;
+            // Updating the timer of the gravity
+            gravity_ticks -= deltaTime;
+            // Updating the timer of the spawning of barrels
+            spawn_barrel_timer -= deltaTime;
 
-        // if it's not the first level
-        if (game_level > 1){
-            // Updating the timer of the spawning of falling barrels
-            spawn_falling_barrel_timer -= deltaTime;
-        }
+            // if it's not the first level
+            if (game_level > 1){
+                // Updating the timer of the spawning of falling barrels
+                spawn_falling_barrel_timer -= deltaTime;
+            }
 
-        // Updating the timers of all the barrel's movement
-        for (i = 0; i < MAX_BARRELS_OBJECT; i++){
-            if (barrels_array[i]){
-                barrels_array[i]->movement_ticks -= deltaTime;
-                // if it's not the first level
-                if (game_level > 1){
-                    // if it's a falling barrel, update it's falling timer
-                    if (barrels_array[i]->is_falling_barrel){
-                        barrels_array[i]->falling_ticks -= deltaTime;
+            // Updating the timers of all the barrel's movement
+            for (i = 0; i < MAX_BARRELS_OBJECT; i++){
+                if (barrels_array[i]){
+                    barrels_array[i]->movement_ticks -= deltaTime;
+                    // if it's not the first level
+                    if (game_level > 1){
+                        // if it's a falling barrel, update it's falling timer
+                        if (barrels_array[i]->is_falling_barrel){
+                            barrels_array[i]->falling_ticks -= deltaTime;
+                        }
                     }
                 }
             }
-        }
 
-        // Checks if a second has passed
-        if (deltaTime_counter >= TICKS_IN_A_SECOND){
-            clock_seconds++;
-            // At least a minute has passed
-            if (clock_seconds >= 60){
-                // Gets how many seconds we are passed the 60 seconds mark
-                deltaSeconds = clock_seconds - 60;
-                // Resets the seconds clock
-                clock_seconds = 0;
-                // Adds to it the delta seconds so that we dont lose any seconds
-                clock_seconds += deltaSeconds;
-                // A minute has passed!
-                clock_minutes++;
+            // Checks if a second has passed
+            if (deltaTime_counter >= TICKS_IN_A_SECOND){
+                clock_seconds++;
+                // At least a minute has passed
+                if (clock_seconds >= 60){
+                    // Gets how many seconds we are passed the 60 seconds mark
+                    deltaSeconds = clock_seconds - 60;
+                    // Resets the seconds clock
+                    clock_seconds = 0;
+                    // Adds to it the delta seconds so that we dont lose any seconds
+                    clock_seconds += deltaSeconds;
+                    // A minute has passed!
+                    clock_minutes++;
+                }
+                //printf("%d:%d\n", clock_minutes, clock_seconds);
+                // We want every second to reset the counter
+                deltaTime_counter = 0;
+                // Resetting the global ticks counter
+                clock_ticks = 0;
             }
-            //printf("%d:%d\n", clock_minutes, clock_seconds);
-            // We want every second to reset the counter
-            deltaTime_counter = 0;
-            // Resetting the global ticks counter
-            clock_ticks = 0;
         }
     }
 }
@@ -1206,6 +1210,26 @@ void load_level(){
     reset_hammer();
 }
 
+// Returns where on the x axis we need to start printing to center the text
+int center_text_in_screen(char* text, int len){
+    return ((SCREEN_WIDTH / 2) - (len / 2));
+}
+
+// Inserts text to display draft
+void insert_text_to_draft(char* text, int len, int start_x, int start_y, char color_byte){
+    int i = 0;
+
+    for (i = 0; i < len; i++){
+        display_draft[start_y][start_x + i] = text[i];
+        display_draft_color[start_y][start_x + i] = color_byte;
+    }
+}
+
+// Inserts text to the center of the line to the display draft
+void insert_text_to_center_of_draft(char* text, int len, int start_y, char color_byte){
+    insert_text_to_draft(text, len, center_text_in_screen(text, len), start_y, color_byte);
+}
+
 // Handles the updating of stuff and shit
 void updater(){
 
@@ -1261,9 +1285,11 @@ void updater(){
                 gravity_ticks = apply_gravity_every_ticks;
             }
 
-            display_draft[0][4] = (spawn_barrel_timer / 100 % 10) + '0';
-            display_draft[0][5] = (spawn_barrel_timer / 10 % 10) + '0';
-            display_draft[0][6] = (spawn_barrel_timer % 10) + '0';
+            if (spawn_barrel_timer > 0){
+                display_draft[0][4] = (spawn_barrel_timer / 100 % 10) + '0';
+                display_draft[0][5] = (spawn_barrel_timer / 10 % 10) + '0';
+                display_draft[0][6] = (spawn_barrel_timer % 10) + '0';
+            }
 
             // if the spawning barrel is dont we need to spawn a new one
             if (spawn_barrel_timer <= 0){
@@ -1323,6 +1349,33 @@ void updater(){
             save_display_draft();
         }else if (gameState == InMenu){
             refill_display_draft(menu, 6);
+
+            for (i = 0; i < input_queue_received; i++){
+                init_vars();
+                gameState = InGame;
+            }
+            // Resetting the input queue vars for next time
+            input_queue_received = 0;
+            input_queue_tail = 0;
+
+            insert_text_to_center_of_draft("Start Game", 10, 13, 7);
+            insert_text_to_center_of_draft("Exit", 4, 15, 7);
+
+            save_display_draft();
+        }else if (gameState == InGameOver){
+            refill_display_draft(menu_game_over, 4);
+
+            for (i = 0; i < input_queue_received; i++){
+                init_vars();
+                gameState = InMenu;
+            }
+            // Resetting the input queue vars for next time
+            input_queue_received = 0;
+            input_queue_tail = 0;
+
+            insert_text_to_center_of_draft("Main Menu", 9, 13, 7);
+            insert_text_to_center_of_draft("Exit", 4, 15, 7);
+
             save_display_draft();
         }
     }
@@ -1352,11 +1405,13 @@ void manager(){
         // if the player ran out of lives
         if (player_lives <= 0){
             // TODO: Game over
+            gameState = InGameOver;
         }
         
         // if the player got to 3 minutes the game is over
         if (clock_minutes >= 3 && last_min != 3){
             // TODO: Restart game ?
+            gameState = InGameOver;
         }
 
         // if mario got to the princess
@@ -1370,7 +1425,7 @@ void manager(){
                 last_min = 0;
                 send(updater_pid, 2);
                 // load the level
-                //load_level();
+                load_level();
             }else {
                 // Game won!
             }
@@ -1389,6 +1444,8 @@ void manager(){
         if (last_gameState != gameState){
             if (gameState == InGame){
                 send(updater_pid, 1);
+                send(time_handler_pid, 1);
+                last_min = 0;
             }
 
             last_gameState = gameState;

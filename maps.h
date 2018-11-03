@@ -32,6 +32,35 @@ char menu[SCREEN_HEIGHT][SCREEN_WIDTH] =
     "--------------------------------------------------------------------------------",
 };
 
+char menu_game_over[SCREEN_HEIGHT][SCREEN_WIDTH] = 
+{
+    "--------------------------------------------------------------------------------",
+    "                                                                                ",
+    "                                                                                ",
+    "                                                                                ",
+    "         GGGG                              OOOOO                                ",
+    "        GG  GG   aa aa mm mm mmmm    eee  OO   OO vv   vv   eee  rr rr          ",
+    "       GG       aa aaa mmm  mm  mm ee   e OO   OO  vv vv  ee   e rrr  r         ",
+    "       GG   GG aa  aaa mmm  mm  mm eeeee  OO   OO   vvv   eeeee  rr             ",
+    "        GGGGGG  aaa aa mmm  mm  mm  eeeee  OOOO0     v     eeeee rr             ",
+    "                                                                                ",
+    "                                                                                ",
+    "                                                                                ",
+    "                                                                                ",
+    "                                                                                ",
+    "                                                                                ",
+    "                                                                                ",
+    "                                                                                ",
+    "                                                                                ",
+    "                                                                                ",
+    "                                                                                ",
+    "                                                                                ",
+    "                                                                                ",
+    "                                                                                ",
+    "                                                                                ",
+    "--------------------------------------------------------------------------------",
+};
+
 char map_1[SCREEN_HEIGHT][SCREEN_WIDTH] = 
 {
     "                                                                                ",
