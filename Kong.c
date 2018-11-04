@@ -25,6 +25,13 @@
 #define KEY_ENTER 28
 #define KEY_ESC 1
 
+#define SOUND_PLAY_DELAY 1
+#define SOUND_BARREL_HIT_FREQ 87
+#define SOUND_HAMMER_PICKUP_FREQ 294
+#define SOUND_NEW_LEVEL_FREQ 294
+#define SOUND_GAME_OVER_FREQ 18
+#define SOUND_GAME_WON_FREQ 3951
+
 #define MAIN_MENU_COUNT 2
 #define GAME_OVER_COUNT 2
 #define MENU_MAX_STRINGS 4
@@ -140,6 +147,7 @@ int updater_pid;
 int drawer_pid;
 int manager_pid;
 int bg_pid;
+int sounder_pid;
 
 /* Drawer vars */
 // the whole display is represented here: 1 pixel = 1 cell
@@ -255,6 +263,90 @@ char saved_color_byte;
 int game_exited = 0;
 // Screen game object, used to detect if the objects are inside it
 gameObject screenObject = {"Screen", {0,0}, SCREEN_WIDTH, SCREEN_HEIGHT, (char**) map_1};
+
+// Turns the speaker on or off
+void set_speaker(int status){
+    // Holds the port 61h info
+    int port_val = 0;
+
+    // Getting the info from port 61h
+    asm{
+        PUSH AX
+        MOV AL, 61h
+        MOV BYTE PTR port_val, AL
+        POP AX
+    }
+
+    // if we want to turn on the speakers we need to switch on bit 1 and 2
+    // if we want to turn off the speakers we need to switch off bit 1 and 2
+    if (status) port_val |= 3;
+    else port_val &=~ 3;
+
+    // Setting the action we want after we changed the values (we need to set them back to port 61h)
+    asm{
+        PUSH AX
+        MOV AX, WORD PTR port_val
+        OUT 61h, AL
+        POP AX
+    }
+}
+
+// Plays sound with the freq set to hertz
+void play_sound(int hertz){
+    // The formula is: counter = (PIT frequency) / (frequency we want)
+    unsigned int final_counter = 1193180L / hertz;
+
+    // Setting the speakers on
+    set_speaker(TRUE);
+
+    // Setting our wanted vars to the PIT
+    // 0B6h = 10110110
+    // Left-To-Right: 10 - PIT Counter 2, 11 Read/Write lower byte first, 011 Mode 3, 0 Binary Counting
+    asm{
+        PUSH AX
+        MOV AL, 0B6h
+        OUT 43h, AL
+        POP AX
+    }
+
+    // Port 42 for Counter #2
+    // Setting the counter (LSB)
+    asm{
+        PUSH AX
+        MOV AX, WORD PTR final_counter
+        AND AX, 0FFh
+        OUT 42h, AL
+        POP AX
+    }
+
+    // Setting the counter (MSB)
+    asm{
+        PUSH AX
+        MOV AX, WORD PTR final_counter
+        MOV AL, AH
+        OUT 42h, AL
+        POP AX
+    }
+}
+
+// Turns the speakers off
+void stop_sound(){
+    set_speaker(0);
+}
+
+// Handles the sound in the game
+void sounder(){
+    while(TRUE){
+        play_sound(receive());
+        sleept(SOUND_PLAY_DELAY);
+        stop_sound();
+    }
+}
+
+// Sends a msg to the sounder to play a note
+void send_sound(int hertz){
+    send(sounder_pid, hertz);
+}
 
 void paint_model(gameObject* obj , char color_byte, int ignore_empty){
     int i = 0;
@@ -616,6 +708,7 @@ void check_collision_with_a_barrel(gameObject* obj, int index_in_array){
 
     // Checks for collision between 2 rectangles
     if (obj_right >= b_left && obj_left <= b_right && obj_bottom >= b_top && obj_top <= b_bottom){
+        send_sound(SOUND_BARREL_HIT_FREQ);
         delete_barrel(index_in_array);
         player_lives--;
     }
@@ -1142,6 +1235,7 @@ void handle_player_movement(int input_scan_code){
             }
         }
     }
+
 }
 
 // Handles the input from the user when at the menu screens
@@ -1305,7 +1399,8 @@ void updater(){
                     mario_got_to_princess = 1;
                 }
                 // Check for collision with the hammer
-                if (check_collision_with_rectangle(&playerObject, &hammerObject) && !on_top_ladder){
+                if (check_collision_with_rectangle(&playerObject, &hammerObject) && !on_top_ladder && !is_with_hammer){
+                    send_sound(SOUND_HAMMER_PICKUP_FREQ);
                     is_with_hammer = 1;
                 }
             }
@@ -1498,6 +1593,7 @@ void init_game(){
 void game_over_init(){
     init_game();
     gameState = InGameOver;
+    send_sound(SOUND_GAME_OVER_FREQ);
     game_level = 1;
 }
 
@@ -1531,11 +1627,13 @@ void manager(){
                 last_min = 0;
                 init_vars();
                 game_init = 1;
+                send_sound(SOUND_NEW_LEVEL_FREQ);
                 send(time_handler_pid, 1);
                 send(updater_pid, 2);
             }else {
                 // Game won!
                 init_game();
+                send_sound(SOUND_GAME_WON_FREQ);
                 game_level = 1;
                 gameState = InGameWon;
             }
@@ -1570,7 +1668,7 @@ void manager(){
 
 // Starts all the processes of the game
 void start_processes(){
-    int up_pid, draw_pid, recv_pid, timer_pid, mang_pid;
+    int up_pid, draw_pid, recv_pid, timer_pid, mang_pid, sou_pid;
 
     srand(elapsed_time);
 
@@ -1579,6 +1677,7 @@ void start_processes(){
     resume(recv_pid = create(receiver, INITSTK, INITPRIO + 3, "KONG: RECEIVER", 0));
     resume(up_pid = create(updater, INITSTK, INITPRIO, "KONG: UPDATER", 0));
     resume(mang_pid = create(manager, INITSTK, INITPRIO, "KONG: MANAGER", 0));
+    resume(sou_pid = create(sounder, INITSTK, INITPRIO, "KONG: SOUNDER", 0));
 
     // Saving the pids of the process for global use
     receiver_pid = recv_pid;
@@ -1586,6 +1685,7 @@ void start_processes(){
     updater_pid = up_pid;
     drawer_pid = draw_pid;
     manager_pid = mang_pid;
+    sounder_pid = sou_pid;
 
     // Schedules the drawer and updater
     schedule(3, CYCLE_DRAWER, draw_pid, 0, up_pid, CYCLE_UPDATER, 0, CYCLE_UPDATER, manager_pid);

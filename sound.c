@@ -1,39 +1,148 @@
+// sou3.c
+#include <dos.h>
+#include <stdio.h>
+
+#define ON (1)
+#define OFF (0)
+
+volatile int count;
+
+void interrupt newint8(void)
+{
+   count++;
+   asm {
+        MOV AL,20h
+        OUT 20h,AL
+       }
+
+} // newint8(void)
+
+void interrupt (*int8save)(void);
+
+void mydelay(int n)
+{
+        asm {
+          CLI
+          PUSH AX
+          MOV AL,036h
+          OUT 43h,AL
+          MOV AX,9700
+          OUT 40h,AL
+          MOV AL,AH
+          OUT 40h,AL 
+          POP AX
+        } // asm
+
+    int8save = getvect(8);
+    setvect(8,newint8);
+    asm  { STI};
+    count = 0;
+    while(count <= n*110)
+        ;
+
+        asm {
+          CLI
+          PUSH AX
+          MOV AL,036h
+          OUT 43h,AL
+          MOV AX,0
+          OUT 40h,AL
+          MOV AL,AH
+          OUT 40h,AL 
+          POP AX
+        } // asm
 
 
-void playing_sound_controller (){
+    setvect(8,int8save);
 
-	asm{
-	// make a sound
-	in al, 61h
-	or al, 00000011b // 111011
-	out 61h, al
-	mov al, 0b6h
-	out 43h, al
-	mov ax, 2394h
-	out 42h, al
-	mov al, ah
-	out 42h, al
-	}
-}
 
-void stopping_sound_controller (){
-	
-	asm{
-	// stop sound
-	in al, 61h
-	and al, 11111100b
-	out 61h, a
-	}
-}
+} //mydelay
 
-void color_controller(){
-	
-	asm{	
-	mov ah, 9
-	mov bl, 9 // number of the color
-	mov cx, 11 //number of chars that in the text
-	int 10h
-	mov DX,OFFSET TXT
-	int 
-	}
-}
+
+
+/*------------------------------------------------
+ ChangeSpeaker - Turn speaker on or off. */
+
+ void ChangeSpeaker( int status )
+ {
+  int portval;
+//   portval = inportb( 0x61 );
+
+      portval = 0;
+   asm {
+        PUSH AX
+        MOV AL,61h
+        MOV byte ptr portval,AL
+        POP AX
+       }
+
+    if ( status==ON )
+     portval |= 0x03;
+      else
+       portval &=~ 0x03; // Bitwise and between portval and ones complement
+        // outportb( 0x61, portval );
+        asm {
+          PUSH AX
+          MOV AX,portval
+          OUT 61h,AL
+          POP AX
+        } // asm
+
+	} /*--ChangeSpeaker( )----------*/
+
+	void Sound( int hertz )
+	{
+	 unsigned divisor = 1193180L / hertz;
+
+	  ChangeSpeaker( ON );
+
+   //        outportb( 0x43, 0xB6 );
+        asm {
+          PUSH AX
+          MOV AL,0B6h
+          OUT 43h,AL
+          POP AX
+        } // asm
+
+
+     //       outportb( 0x42, divisor & 0xFF ) ;
+        asm {
+          PUSH AX
+          MOV AX,divisor
+          AND AX,0FFh
+          OUT 42h,AL
+          POP AX
+        } // asm
+
+
+     //        outportb( 0x42, divisor >> 8 ) ;
+
+        asm {
+          PUSH AX
+          MOV AX,divisor
+          MOV AL,AH
+          OUT 42h,AL
+          POP AX
+        } // asm
+
+	     } /*--Sound( )-----*/
+
+      void NoSound( void )
+        {
+             ChangeSpeaker( OFF );
+        } /*--NoSound( )------*/
+
+       int main( void )
+        {
+           Sound( 355 );
+           mydelay( 2 );
+           Sound( 733 );
+           mydelay( 2 );
+           Sound( 355 );
+           mydelay( 2 );
+           Sound( 733 );
+           mydelay( 2 );
+
+           NoSound( );
+           return(0);
+        } /*--main( )-------*/
