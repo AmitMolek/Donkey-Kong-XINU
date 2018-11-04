@@ -56,9 +56,6 @@
 
 extern struct intmap far *sys_imp;
 
-void stop_processes();
-void start_processes();
-
 /* Enums */
 typedef enum gameState{
     InGame = 0,
