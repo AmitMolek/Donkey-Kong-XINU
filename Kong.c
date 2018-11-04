@@ -25,6 +25,10 @@
 #define KEY_ENTER 28
 #define KEY_ESC 1
 
+#define MAIN_MENU_COUNT 2
+#define GAME_OVER_COUNT 2
+#define MENU_MAX_STRINGS 4
+
 #define MAX_GAME_OBJECTS 64
 #define MAX_BARRELS_OBJECT MAX_GAME_OBJECTS - 1
 #define MAX_SAVED_INPUT 4
@@ -51,7 +55,8 @@ void start_processes();
 typedef enum gameState{
     InGame = 0,
     InMenu = 1,
-    InGameOver = 2
+    InGameOver = 2,
+    InGameWon = 3
 } GameState;
 
 /* Structs */
@@ -150,6 +155,8 @@ char display_draft_color[SCREEN_HEIGHT][SCREEN_WIDTH];
 int game_level = 1;
 int mario_got_to_princess = 0;
 int player_lives = PLAYER_LIFE_COUNT;
+int menu_index = 0;
+int game_init = 0;
 enum GameState gameState = InMenu;
 
 /* Game Object vars */
@@ -452,6 +459,12 @@ void time_handler(){
         // Waiting for the time routine to wake up this process
         // Basically waiting for a tick to pass
         received_msg = receive();
+        // Msg #1 = Game stared
+        if (received_msg == 1){
+            deltaTime_counter = 0;
+            updater_last_call = elapsed_time;
+            deltaSeconds = 0;
+        }
 
         if (gameState == InGame){
             /* Time tracking */
@@ -726,6 +739,9 @@ void spawn_hammer(){
 
     rnd_platform = rand() % 3 + 1;
 
+    hammerObject.top_left_point.x = 0;
+    hammerObject.top_left_point.y = 0;
+
     switch(rnd_platform){
         case 1:
             rnd_x = RAND_2(57, 22);
@@ -747,6 +763,7 @@ void spawn_hammer(){
     hammerObject.top_left_point.y = rnd_y;
     is_hammer_exist = 1;
     hammer_hits_left = HAMMER_MAX_HITS;
+
 }
 
 // 'Resets' the hammer, basically makes it disappear
@@ -1002,9 +1019,12 @@ void insert_model_to_draft(gameObject* gameObj, char color_byte){
     // top_left_x <= j < top_left_x + model width
     for (i = top_left_y; i < top_left_y + model_height; i++){
         for (j = top_left_x; j < top_left_x + model_width; j++){
-            display_draft[i][j] = objectModel[k];
-            display_draft_color[i][j] = color_byte;
-            k++;
+            // We want to add only the parts that are inside the screen borders
+            if (!(i >= SCREEN_HEIGHT)){
+                display_draft[i][j] = objectModel[k];
+                display_draft_color[i][j] = color_byte;
+                k++;
+            }
         }
     }
 }
@@ -1122,14 +1142,23 @@ void handle_player_movement(int input_scan_code){
             }
         }
     }
+}
 
-    // Makes sure that the player is in the boundaries of the screen
-    //if (playerPos.x > SCREEN_WIDTH) playerPos.x = SCREEN_WIDTH;
-    //if (playerPos.x < 0) playerPos.x = 0;
-    //if (playerPos.y > SCREEN_HEIGHT) playerPos.y = SCREEN_HEIGHT;
-    //if (playerPos.y < 0) playerPos.y = 0;
+// Handles the input from the user when at the menu screens
+// Returns 1 if enter was pressed
+int handle_menu_movement(int input_scan_code, int count_of_menues){
+    if (input_scan_code == ARROW_UP){
+        menu_index--;
+    }else if (input_scan_code == ARROW_DOWN){
+        menu_index++;
+    }else if (input_scan_code == KEY_ENTER){
+        return 1;
+    }
 
-    //printf("Player position: (%d, %d)\n", playerPos.x, playerPos.y);
+    if (menu_index >= count_of_menues) menu_index = 0;
+    if (menu_index < 0) menu_index = count_of_menues - 1;
+    
+    return 0;
 }
 
 // Inserts the indication of the life of the player to the display draft
@@ -1193,21 +1222,11 @@ void init_vars(){
 
     apply_gravity_every_ticks = 5;
     gravity_ticks = 5;
-}
 
-// Loda the level
-void load_level(){
-    int i = 0;
-
-    // Reset player postion
     playerObject.top_left_point.x = PLAYER_START_POS_X;
     playerObject.top_left_point.y = PLAYER_START_POS_Y;
 
-    // Reset clock
-    clock_seconds = 0;
-    clock_minutes = 0;
-
-    reset_hammer();
+    reset_hammer();    
 }
 
 // Returns where on the x axis we need to start printing to center the text
@@ -1230,18 +1249,42 @@ void insert_text_to_center_of_draft(char* text, int len, int start_y, char color
     insert_text_to_draft(text, len, center_text_in_screen(text, len), start_y, color_byte);
 }
 
+// Handles the pressing of menu button
+void handle_menu_entered(GameState changeToState){
+    switch(menu_index){
+        // case 0 is always to change to state of the game
+        case 0:
+            gameState = changeToState;
+        break;
+
+        case 1:
+            // Resets the output to the screen
+            reset_output_to_screen();
+            wipe_entire_screen();
+            asm INT 27;
+        break;
+    }
+}
+
 // Handles the updating of stuff and shit
 void updater(){
 
     int i = 0;
     int j = 0;
     int received_msg;
+    int menu_result = 0;
 
     while (TRUE){
         received_msg = receive();
         // Msg #2 = Game Started
         if (received_msg == 1){
             reset_hammer();
+
+            // Delete all barrels
+            for (i = 0; i < MAX_BARRELS_OBJECT; i++){
+                if (barrels_array[i])
+                    delete_barrel(i);
+            }
         }
         // Msg #2 = Delete all barrels
         if (received_msg == 2){
@@ -1252,7 +1295,7 @@ void updater(){
             }
         }
 
-        if (gameState == InGame){
+        if (gameState == InGame && game_init){
             // if there is a input from the player we need to handle it
             for (i = 0; i < input_queue_received; i++){
                 // Handle the input from the player
@@ -1262,7 +1305,7 @@ void updater(){
                     mario_got_to_princess = 1;
                 }
                 // Check for collision with the hammer
-                if (check_collision_with_rectangle(&playerObject, &hammerObject)){
+                if (check_collision_with_rectangle(&playerObject, &hammerObject) && !on_top_ladder){
                     is_with_hammer = 1;
                 }
             }
@@ -1276,7 +1319,9 @@ void updater(){
 
             if (!check_collision_with_rectangle(&playerObject, &screenObject)){
                 player_lives--;
-                load_level();
+
+                playerObject.top_left_point.x = PLAYER_START_POS_X;
+                playerObject.top_left_point.y = PLAYER_START_POS_Y;
             }
 
             // if the gravity timer is dont we need to apply gravity
@@ -1298,6 +1343,7 @@ void updater(){
                 create_barrel(kongObject.top_left_point.x + 1, kongObject.top_left_point.y + 2,
                 barrel_movement_speed_in_ticks, 0, 0, 0);
                 // Resetting the spawning barrel timer
+                printf("Spawn: %d\n", spawn_barrel_speed_in_ticks);
                 spawn_barrel_timer = spawn_barrel_speed_in_ticks;
             }
 
@@ -1351,30 +1397,75 @@ void updater(){
             refill_display_draft(menu, 6);
 
             for (i = 0; i < input_queue_received; i++){
-                init_vars();
-                gameState = InGame;
+                menu_result = handle_menu_movement(input_queue[i], 2);
             }
             // Resetting the input queue vars for next time
             input_queue_received = 0;
             input_queue_tail = 0;
 
-            insert_text_to_center_of_draft("Start Game", 10, 13, 7);
-            insert_text_to_center_of_draft("Exit", 4, 15, 7);
+            if (menu_result){
+                handle_menu_entered(InGame);
+
+                menu_result = 0;
+            }
+
+            if (menu_index == 0){
+                insert_text_to_center_of_draft("Start Game", 10, 13, 1);
+                insert_text_to_center_of_draft("Exit", 4, 15, 7);
+            }else {
+                insert_text_to_center_of_draft("Start Game", 10, 13, 7);
+                insert_text_to_center_of_draft("Exit", 4, 15, 1);
+            }
 
             save_display_draft();
         }else if (gameState == InGameOver){
             refill_display_draft(menu_game_over, 4);
-
+            
             for (i = 0; i < input_queue_received; i++){
-                init_vars();
-                gameState = InMenu;
+                menu_result = handle_menu_movement(input_queue[i], 2);
             }
             // Resetting the input queue vars for next time
             input_queue_received = 0;
             input_queue_tail = 0;
 
-            insert_text_to_center_of_draft("Main Menu", 9, 13, 7);
-            insert_text_to_center_of_draft("Exit", 4, 15, 7);
+            if (menu_result){
+                handle_menu_entered(InMenu);
+
+                menu_result = 0;
+            }
+
+            if (menu_index == 0){
+                insert_text_to_center_of_draft("Main Menu", 9, 13, 1);
+                insert_text_to_center_of_draft("Exit", 4, 15, 7);
+            }else {
+                insert_text_to_center_of_draft("Main Menu", 9, 13, 7);
+                insert_text_to_center_of_draft("Exit", 4, 15, 1);
+            }
+
+            save_display_draft();
+        }else if (gameState == InGameWon){
+            refill_display_draft(menu_game_won, 14);
+            
+            for (i = 0; i < input_queue_received; i++){
+                menu_result = handle_menu_movement(input_queue[i], 2);
+            }
+            // Resetting the input queue vars for next time
+            input_queue_received = 0;
+            input_queue_tail = 0;
+
+            if (menu_result){
+                handle_menu_entered(InMenu);
+
+                menu_result = 0;
+            }
+
+            if (menu_index == 0){
+                insert_text_to_center_of_draft("Main Menu", 9, 13, 1);
+                insert_text_to_center_of_draft("Exit", 4, 15, 7);
+            }else {
+                insert_text_to_center_of_draft("Main Menu", 9, 13, 7);
+                insert_text_to_center_of_draft("Exit", 4, 15, 1);
+            }
 
             save_display_draft();
         }
@@ -1396,6 +1487,20 @@ void receiver(){
     }
 }
 
+// Init the game vars
+void init_game(){
+    game_init = 0;
+    init_vars();
+    game_init = 1;
+}
+
+// When the game is over we need to init some stuff
+void game_over_init(){
+    init_game();
+    gameState = InGameOver;
+    game_level = 1;
+}
+
 // Manages different game things and thangs
 void manager(){
     int last_min = 0;
@@ -1403,36 +1508,41 @@ void manager(){
 
     while (TRUE){
         // if the player ran out of lives
-        if (player_lives <= 0){
+        if (player_lives <= 0 && gameState == InGame){
             // TODO: Game over
-            gameState = InGameOver;
+            game_over_init();
         }
         
         // if the player got to 3 minutes the game is over
-        if (clock_minutes >= 3 && last_min != 3){
+        if (clock_minutes >= 3 && last_min != 3 && gameState == InGame){
             // TODO: Restart game ?
-            gameState = InGameOver;
+            game_over_init();
         }
 
         // if mario got to the princess
-        if (mario_got_to_princess){
+        if (mario_got_to_princess && gameState == InGame){
             mario_got_to_princess = 0;
             // if there are any more levels
             if (game_level + 1 <= 3){
+                game_init = 0;
                 // TODO: Restart all positions and stuff
                 game_level++;
                 // The clock is resetted to 0:0 so the last minute needs to be 0
                 last_min = 0;
+                init_vars();
+                game_init = 1;
+                send(time_handler_pid, 1);
                 send(updater_pid, 2);
-                // load the level
-                load_level();
             }else {
                 // Game won!
+                init_game();
+                game_level = 1;
+                gameState = InGameWon;
             }
         }
 
         // if it's the second level and a minute has passed we need to speed up the barrel spawn
-        if (game_level == 2 && last_min != clock_minutes){
+        if (game_level == 2 && last_min != clock_minutes && gameState == InGame){
             spawn_barrel_speed_in_ticks /= 2;
         }
 
@@ -1441,8 +1551,13 @@ void manager(){
             last_min = clock_minutes;
         }
 
+        // Checks if the game state changed
         if (last_gameState != gameState){
+            // if the game state changed to in game (want to play)
             if (gameState == InGame){
+                // we need to init the game
+                init_game();
+                // Send a msg to the procceses that we need to start the game
                 send(updater_pid, 1);
                 send(time_handler_pid, 1);
                 last_min = 0;
@@ -1456,6 +1571,8 @@ void manager(){
 // Starts all the processes of the game
 void start_processes(){
     int up_pid, draw_pid, recv_pid, timer_pid, mang_pid;
+
+    srand(elapsed_time);
 
     resume(timer_pid = create(time_handler, INITSTK, INITPRIO, "KONG: TIME HANDLER", 0));
     resume(draw_pid = create(drawer, INITSTK, INITPRIO + 1, "KONG: DRAWER", 0));
