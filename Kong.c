@@ -283,7 +283,7 @@ gameObject screenObject = {"Screen", {0,0}, SCREEN_WIDTH, SCREEN_HEIGHT, (char**
 void change_game_state(GameState new_state){
     prev_game_state = gameState;
     gameState = new_state;
-    send(manager_pid, 0);
+    //send(manager_pid, 0);
 }
 
 // Turns the speaker on or off
@@ -1764,6 +1764,8 @@ void init_game(){
 
 // When the game is won we need to init some stuff
 void game_won_init(){
+    // Add points for winning
+    add_score_points(POINTS_GAME_WON);
     // Lock the game
     game_init = 0;
     // Change the state of the game to Game Won menu
@@ -1774,8 +1776,6 @@ void game_won_init(){
 
 // When the game is over we need to init some stuff
 void game_over_init(){
-    // Add points for winning
-    add_score_points(POINTS_GAME_WON);
     // Lock the game
     game_init = 0;
     // Change the state of the game to Game Over menu
