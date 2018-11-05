@@ -986,23 +986,27 @@ void move_object(gameObject* obj, int x_movement, int y_movement){
 // Makes the hammer hit!
 void hammer_hit(){
     int i = 0;
+
+    // Move the hammer for the hit
     move_object(&hammerObject, 0, 1);
     // Setting the start of the hit
     hammer_hit_duration = elapsed_time;
     // Check for collision with the barrels
     for (i = 0; i < MAX_BARRELS_OBJECT; i++){
-        if (check_collision_with_rectangle(&hammerObject, barrels_array[i]->obj)){
-            // Playing a sound to indicate that the hammer hit a barrel
-            send_sound(SOUND_HAMMER_HIT_FREQ);
-            // Delete the barrel
-            delete_barrel(i);
-            // Decrease the hammer hits that is left
-            hammer_hits_left--;
-            // Adds points to the player for destroying the barrel
-            add_score_points(POINTS_BARREL_HIT);
-            // if we ran out of hits, spawn a new hammer
-            if (hammer_hits_left <= 0){
-                reset_hammer();
+        if (barrels_array[i]){
+            if (check_collision_with_rectangle(&hammerObject, barrels_array[i]->obj)){
+                // Playing a sound to indicate that the hammer hit a barrel
+                send_sound(SOUND_HAMMER_HIT_FREQ);
+                // Delete the barrel
+                delete_barrel(i);
+                // Decrease the hammer hits that is left
+                hammer_hits_left--;
+                // Adds points to the player for destroying the barrel
+                add_score_points(POINTS_BARREL_HIT);
+                // if we ran out of hits, spawn a new hammer
+                if (hammer_hits_left <= 0){
+                    reset_hammer();
+                }
             }
         }
     }
@@ -1031,7 +1035,7 @@ void move_barrels(){
             // if the barrel game object exists
             if (barrels_array[i]->obj){
                 barrel = barrels_array[i];
-                // if it's time to move the barrel
+                // if it's time to move the barrel, end of timer
                 if (barrel->movement_ticks <= 0) {
                     // Resetting the barrel's movement timer
                     barrel->movement_ticks = barrel_movement_speed_in_ticks;
@@ -1365,6 +1369,7 @@ void insert_player_score_to_draft(int y, int offset, char color_byte){
     int iteration_score = player_score;
 
     for (i = 0; i < 5; i++){
+        // int to ascii
         display_draft[y][SCREEN_WIDTH - offset - i] = (iteration_score % 10) + '0';
         display_draft_color[y][SCREEN_WIDTH - offset - i] = color_byte;
         iteration_score /= 10;
