@@ -264,6 +264,10 @@ xmain() {
 	set_new_int9_newisr();
 
 	schedule(2,57, dispid, 0,  uppid, 29);
+
+    printf("%d %d %d\n", dispid ,sched_arr_pid[0], sched_arr_int[0]);
+    printf("%d %d %d\n", uppid, sched_arr_pid[1], sched_arr_int[1]);
+
 	//schedule(2, 18, dispid, 0, uppid, 9);
 	//schedule(1, 9, uppid);
 } // xmain
