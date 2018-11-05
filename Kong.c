@@ -283,7 +283,6 @@ gameObject screenObject = {"Screen", {0,0}, SCREEN_WIDTH, SCREEN_HEIGHT, (char**
 void change_game_state(GameState new_state){
     prev_game_state = gameState;
     gameState = new_state;
-    //send(manager_pid, 0);
 }
 
 // Turns the speaker on or off
@@ -301,6 +300,7 @@ void set_speaker(int status){
 
     // if we want to turn on the speakers we need to switch on bit 1 and 2
     // if we want to turn off the speakers we need to switch off bit 1 and 2
+    // 3 = 00000011
     if (status) port_val |= 3;
     else port_val &=~ 3;
 
@@ -373,7 +373,6 @@ void send_sound(int hertz){
 // Adds/Subs from the player's lives
 void add_player_life(int lp){
     player_lives += lp;
-
 }
 
 // Adds score points the the player's score
@@ -423,7 +422,6 @@ void print_to_screen(){
             // and advancing the index to the next cell of the console
             asm{
                 MOV AL, BYTE PTR current_pixel
-                //MOV AH, BYTE PTR default_color_byte
                 MOV AH, BYTE PTR current_color
 
                 MOV ES:[DI], AX
@@ -624,6 +622,7 @@ void time_handler(){
                 // if the player is playing the game
                 // every second add points to his score for survival
                 if (gameState == InGame && game_init) add_score_points(POINTS_EVERY_SEC);
+
                 // At least a minute has passed
                 if (clock_seconds >= 60){
                     // Gets how many seconds we are passed the 60 seconds mark
@@ -638,7 +637,7 @@ void time_handler(){
                     // every minute add points for his score for survival
                     if (gameState == InGame && game_init) add_score_points(POINTS_EVERY_MINUTE);
                 }
-                //printf("%d:%d\n", clock_minutes, clock_seconds);
+
                 // We want every second to reset the counter
                 deltaTime_counter = 0;
                 // Resetting the global ticks counter
@@ -809,10 +808,6 @@ int check_collision_with_map(gameObject* obj, int x_movement, int y_movement){
 
     int i = 0;
     char currentLadderPixel;
-
-    // if the player is on top of a ladder
-    // we dont need to calculate collision
-    //if (on_top_ladder && strstr(obj->label, "Player")) return 2;
 
     // if we have any movement on the x axis
     if (x_movement != 0){
