@@ -2,6 +2,7 @@
 #include <kernel.h>
 #include <io.h>
 #include <bios.h>
+#include <time.h>
 
 #include "maps.h"
 
@@ -875,12 +876,15 @@ void spawn_hammer(){
     // if the player has the hammer or the hammer exist on the map
     // we dont want to spawn it again
     if (is_with_hammer || is_hammer_exist) return;
-
-    if (player_y <= 12 + offset){
+    
+    // if the player is on the first platform
+    if (player_y <= 22 + offset){
         platform_choices = 3;
     }else if (player_y <= 17 + offset){
+        // second platform
         platform_choices = 2;
-    }else if (player_y <= 22 + offset){
+    }else if (player_y <= 12 + offset){
+        // thrid platform
         platform_choices = 1;
     }
 
@@ -1307,8 +1311,8 @@ void handle_player_movement(int input_scan_code){
                 // The player is on a ladder
                 on_top_ladder = 1;
                 // Drops the hammer
-                is_with_hammer = 0;
-                is_hammer_exist = 0;
+                if (is_with_hammer)
+                    is_hammer_exist = 0;
                 //if (is_with_hammer)
                 //    reset_hammer();
                 // Try to move the player up
@@ -1526,6 +1530,7 @@ void handle_menu_entered(int entered, GameState changeToState){
                 // Resets the output to the screen
                 reset_output_to_screen();
                 wipe_entire_screen();
+                set_speaker(0);
                 asm INT 27;
             break;
         }
@@ -1929,7 +1934,8 @@ void manager(){
 void start_processes(){
     int up_pid, draw_pid, recv_pid, timer_pid, mang_pid, sou_pid;
     int i = 0;
-    srand(elapsed_time);
+    time_t t;
+    srand((unsigned) time(&t));
 
     // The priority of the process as we think:
     // Top to bottom (top = most important)
