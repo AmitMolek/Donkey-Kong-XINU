@@ -865,9 +865,27 @@ void spawn_hammer(){
     int rnd_x;
     int rnd_y;
     int rnd_platform;
+    int platform_choices = 3;
+    int num_of_platforms = 3;
+    int offset = 1;
+
+    // We want to get the player's feet level
+    int player_y = playerObject.top_left_point.y + playerObject.height - 1;
+
+    // if the player has the hammer or the hammer exist on the map
+    // we dont want to spawn it again
+    if (is_with_hammer || is_hammer_exist) return;
+
+    if (player_y <= 12 + offset){
+        platform_choices = 3;
+    }else if (player_y <= 17 + offset){
+        platform_choices = 2;
+    }else if (player_y <= 22 + offset){
+        platform_choices = 1;
+    }
 
     // Randomly select the platform to spawn the hammer on
-    rnd_platform = rand() % 3 + 1;
+    rnd_platform = rand() % platform_choices + 1;
 
     hammerObject.top_left_point.x = 0;
     hammerObject.top_left_point.y = 0;
@@ -1290,6 +1308,9 @@ void handle_player_movement(int input_scan_code){
                 on_top_ladder = 1;
                 // Drops the hammer
                 is_with_hammer = 0;
+                is_hammer_exist = 0;
+                //if (is_with_hammer)
+                //    reset_hammer();
                 // Try to move the player up
                 move_object(&playerObject, 0, -1);
             }else {
@@ -1396,10 +1417,22 @@ void insert_clock_to_draft(){
     display_draft[0][SCREEN_WIDTH - 1] = c_sec_l;
 }
 
+// Deletes all the barrels
+void delete_all_barrels(){
+    int i = 0;
+    
+    for (i = 0; i < MAX_BARRELS_OBJECT; i++){
+        if (barrels_array[i])
+            delete_barrel(i);
+    }
+}
+
 // Init the vars for a new level
 void init_vars_level(){
     // Lock the game
     game_init = 0;
+
+    delete_all_barrels();
 
     /* Reposition the player */
     playerObject.top_left_point.x = PLAYER_START_POS_X;
@@ -1430,7 +1463,7 @@ void init_vars_level(){
     spawn_barrel_timer = 0;
     spawn_barrel_speed_in_ticks = 6 * 18;
     barrel_movement_speed_in_ticks = 5;
-    spawn_falling_barrel_timer = 0;
+    spawn_falling_barrel_timer = 4 * 18;
     spawn_falling_barrel_speed_in_ticks = 4 * 18;
 
     /* Restart gravity vars */
@@ -1479,28 +1512,169 @@ void insert_text_to_center_of_draft(char* text, int len, int start_y, char color
 }
 
 // Handles the pressing of menu button
-void handle_menu_entered(GameState changeToState){
-    switch(menu_index){
-        // case 0 is always to change to state of the game
-        case 0:
-            change_game_state(changeToState);
-        break;
+void handle_menu_entered(int entered, GameState changeToState){
+    // if the user pressed enter
+    if (entered){
+        switch(menu_index){
+            // case 0 is always to change to state of the game
+            case 0:
+                change_game_state(changeToState);
+            break;
 
-        case 1:
-            // The player want to exit the game
-            // Resets the output to the screen
-            reset_output_to_screen();
-            wipe_entire_screen();
-            asm INT 27;
-        break;
+            case 1:
+                // The player want to exit the game
+                // Resets the output to the screen
+                reset_output_to_screen();
+                wipe_entire_screen();
+                asm INT 27;
+            break;
+        }
     }
+}
+
+// Handles input from the user when the game is in one of the menus
+// Returns 1 if pressed enter
+int updater_handle_menu_input(int count_of_menues){
+    int i = 0;
+    int result = 0;
+
+    // Loop all the input from the user
+    for (i = 0; i < input_queue_received; i++){
+        result = handle_menu_movement(input_queue[i], count_of_menues);
+    }
+    // Resetting the input queue vars for next time
+    input_queue_received = 0;
+    input_queue_tail = 0;
+
+    return result;
+}
+
+// Inserts the models of all the barrels to the dispaly draft
+void updater_insert_barrels_to_display_draft(){
+    int i = 0;
+
+    for (i = 0; i < MAX_BARRELS_OBJECT; i++){
+        // Only if the barrel exists
+        if (barrels_array[i]){
+            if (barrels_array[i]->obj){
+                // if the barrel is a normal one we want to insert to normal barrel model
+                // if it's a falling barrel we want to insert a falling barrel model
+                if (!barrels_array[i]->is_falling_barrel){
+                    insert_model_to_draft(barrels_array[i]->obj, 3);
+                } else insert_model_to_draft(barrels_array[i]->obj, 9);
+            }
+        }
+    }
+}
+
+// Inserts models to the display draft
+void updater_insert_models_to_display_draft(){
+    // Barrels
+    updater_insert_barrels_to_display_draft();
+    // Princess
+    insert_model_to_draft(&princessObject, 13);
+    // Player
+    insert_model_to_draft(&playerObject, 14);
+    // Kong
+    insert_model_to_draft(&kongObject, 6);
+
+    // Only if the hammer exist in the map we want to draw it
+    if (is_hammer_exist)
+        insert_model_to_draft(&hammerObject, 15);
+}
+
+// Checks for collisions of the player with the barrels
+void updater_player_barrels_collision(){
+    int j = 0;
+
+    for (j = 0; j < MAX_BARRELS_OBJECT; j++){
+        // if the barrel exists
+        if (barrels_array[j]){
+            // if the barrel's game object exists
+            if (barrels_array[j]->obj){
+                // Check if the player is colliding with the barrels
+                check_collision_with_a_barrel(&playerObject, j);
+            }
+        }
+    }
+}
+
+// Checks if it's time to spawn a new falling barrel
+void updater_spawn_falling_barrel_timer(){
+    // if the spawning falling barrel timer is done we need to spawn a new one
+    if (spawn_falling_barrel_timer <= 0 && game_level > 1){
+        create_barrel(kongObject.top_left_point.x + 1, kongObject.top_left_point.y + 2,
+        barrel_movement_speed_in_ticks, 0, 1, FALLING_BARREL_SPAWN_IN_TICKS);
+        // Resetting the spawning falling barrel timer
+        spawn_falling_barrel_timer = spawn_falling_barrel_speed_in_ticks;
+    }
+}
+
+// Checks if it's time to spawn a new normal barrel
+void updater_spawn_normal_barrel_timer(){
+    // if the spawning barrel timer is done we need to spawn a new one
+    if (spawn_barrel_timer <= 0){
+        // We create a new barrel at kong's position
+        // and init it with the speed of the movement and speed of gravity
+        create_barrel(kongObject.top_left_point.x + 1, kongObject.top_left_point.y + 2,
+        barrel_movement_speed_in_ticks, 0, 0, 0);
+        // Resetting the spawning barrel timer
+        spawn_barrel_timer = spawn_barrel_speed_in_ticks;
+    }
+}
+
+// Checks is the gravity timer is done and we need to apply gravity
+void updater_gravity_timer(){
+    // if the gravity timer is dont we need to apply gravity
+    if (gravity_ticks <= 0){
+        // Try to apply gravity to the game objects
+        apply_gravity_to_game_objects();
+        // Reset the gravity timer
+        gravity_ticks = apply_gravity_every_ticks;
+    }
+}
+
+// Checks and handels if the player is not inside of the screen
+void updater_check_is_player_in_screen_boundries(){
+    // Checks if the player is not inside the screen
+    if (!check_collision_with_rectangle(&playerObject, &screenObject)){
+        // decrease the player lifes
+        sub_player_life();
+
+        // Reset the player position to the default one
+        playerObject.top_left_point.x = PLAYER_START_POS_X;
+        playerObject.top_left_point.y = PLAYER_START_POS_Y;
+    }
+}
+
+// Handles the input from the player
+void updater_handle_player_input(){
+    int i = 0;
+    
+    // if there is a input from the player we need to handle it
+    for (i = 0; i < input_queue_received; i++){
+        // Handle the input from the player
+        handle_player_movement(input_queue[i]);
+        // Check for collision with the princess
+        if (check_collision_with_rectangle(&playerObject, &princessObject)){
+            mario_got_to_princess = 1;
+        }
+        // Check for collision with the hammer
+        if (check_collision_with_rectangle(&playerObject, &hammerObject) && !is_with_hammer){
+            send_sound(SOUND_HAMMER_PICKUP_FREQ);
+            is_with_hammer = 1;
+        }
+    }
+    // Resetting the input queue vars for next time
+    input_queue_received = 0;
+    input_queue_tail = 0;
 }
 
 // Handles the updating of stuff and shit
 void updater(){
 
-    int i = 0;
-    int j = 0;
+    int i;
+    int j;
     // The recieved msg
     int received_msg;
     // Holds if the user pressed enter or not
@@ -1508,136 +1682,60 @@ void updater(){
 
     while (TRUE){
         received_msg = receive();
-        // Msg #2 = Game Started
-        if (received_msg == 1){
-            // if the game is started we want to delete all the barrels
-
-            // Delete all barrels
-            for (i = 0; i < MAX_BARRELS_OBJECT; i++){
-                if (barrels_array[i])
-                    delete_barrel(i);
-            }
-        }
+        // Msg #1 = Game started
         // Msg #2 = Delete all barrels
-        if (received_msg == 2){
+        if (received_msg == 2 || received_msg == 1){
             // Delete all barrels
-            for (i = 0; i < MAX_BARRELS_OBJECT; i++){
-                if (barrels_array[i])
-                    delete_barrel(i);
-            }
+            //delete_all_barrels();
         }
 
         // if we are in game and the game is ready to be played
         if (gameState == InGame && game_init){
-            // if there is a input from the player we need to handle it
-            for (i = 0; i < input_queue_received; i++){
-                // Handle the input from the player
-                handle_player_movement(input_queue[i]);
-                // Check for collision with the princess
-                if (check_collision_with_rectangle(&playerObject, &princessObject)){
-                    mario_got_to_princess = 1;
-                }
-                // Check for collision with the hammer
-                if (check_collision_with_rectangle(&playerObject, &hammerObject) && !on_top_ladder && !is_with_hammer){
-                    send_sound(SOUND_HAMMER_PICKUP_FREQ);
-                    is_with_hammer = 1;
-                }
-            }
-            // Resetting the input queue vars for next time
-            input_queue_received = 0;
-            input_queue_tail = 0;
-
-
+            // Handle input from the player
+            updater_handle_player_input();
+                
+            // Refill the display draft with the game map
             refill_display_draft(map_1, 12);
-
+            // Insert the ladders into the draft
             insert_ladders_to_map(game_level);
 
-            // Checks if the player is not inside the screen
-            if (!check_collision_with_rectangle(&playerObject, &screenObject)){
-                // decrease the player lifes
-                sub_player_life();
+            // Check and handle that the player is inside the screen
+            updater_check_is_player_in_screen_boundries();
+            
+            // Is is time to apply gravity ?
+            updater_gravity_timer();
 
-                // Reset the player position to the default one
-                playerObject.top_left_point.x = PLAYER_START_POS_X;
-                playerObject.top_left_point.y = PLAYER_START_POS_Y;
-            }
-
-            // if the gravity timer is dont we need to apply gravity
-            if (gravity_ticks <= 0){
-                // Try to apply gravity to the game objects
-                apply_gravity_to_game_objects();
-                // Reset the gravity timer
-                gravity_ticks = apply_gravity_every_ticks;
-            }
-
+            // for debug
             if (spawn_barrel_timer > 0){
                 display_draft[0][4] = (spawn_barrel_timer / 100 % 10) + '0';
                 display_draft[0][5] = (spawn_barrel_timer / 10 % 10) + '0';
                 display_draft[0][6] = (spawn_barrel_timer % 10) + '0';
             }
 
-            // if the spawning barrel timer is done we need to spawn a new one
-            if (spawn_barrel_timer <= 0){
-                // We create a new barrel at kong's position
-                // and init it with the speed of the movement and speed of gravity
-                create_barrel(kongObject.top_left_point.x + 1, kongObject.top_left_point.y + 2,
-                barrel_movement_speed_in_ticks, 0, 0, 0);
-                // Resetting the spawning barrel timer
-                spawn_barrel_timer = spawn_barrel_speed_in_ticks;
-            }
-
-            // if the spawning falling barrel timer is done we need to spawn a new one
-            if (spawn_falling_barrel_timer <= 0 && game_level > 1){
-                create_barrel(kongObject.top_left_point.x + 1, kongObject.top_left_point.y + 2,
-                barrel_movement_speed_in_ticks, 0, 1, FALLING_BARREL_SPAWN_IN_TICKS);
-                // Resetting the spawning falling barrel timer
-                spawn_falling_barrel_timer = spawn_falling_barrel_speed_in_ticks;
-            }
-
-            // Inserts the barrel's model to the dispaly draft
-            for (i = 0; i < MAX_BARRELS_OBJECT; i++){
-                // Only if the barrel exists
-                if (barrels_array[i]){
-                    if (barrels_array[i]->obj){
-                        // if the barrel is a normal one we want to insert to normal barrel model
-                        // if it's a falling barrel we want to insert a falling barrel model
-                        if (!barrels_array[i]->is_falling_barrel){
-                            insert_model_to_draft(barrels_array[i]->obj, 3);
-                        } else insert_model_to_draft(barrels_array[i]->obj, 9);
-                    }
-                }
-            }
+            // Is it time to spawn a new (normal) barrel
+            updater_spawn_normal_barrel_timer();
+            // Is it time to spawn a new (falling) barrel
+            updater_spawn_falling_barrel_timer();
 
             // Move the barrels
             move_barrels();
 
             // Check for collisions with barrels
-            for (j = 0; j < MAX_BARRELS_OBJECT; j++){
-                // if the barrel exists
-                if (barrels_array[j]){
-                    // if the barrel's game object exists
-                    if (barrels_array[i]->obj){
-                        // Check if the player is colliding with the barrels
-                        check_collision_with_a_barrel(&playerObject, j);
-                    }
-                }
-            }
+            updater_player_barrels_collision();
 
+            // for debug
             display_draft[0][0] = (barrels_array_index / 10 % 10) + '0';
             display_draft[0][1] = (barrels_array_index % 10) + '0';
 
             /* Inserts the needed models to the display draft */
-            insert_model_to_draft(&princessObject, 13);
-            insert_model_to_draft(&playerObject, 14);
-            insert_model_to_draft(&kongObject, 6);
+            updater_insert_models_to_display_draft();
 
-            // Only if the hammer exist in the map we want to draw it
-            if (is_hammer_exist)
-                insert_model_to_draft(&hammerObject, 15);
-
+            /* Inserts the 'HUD' (Heads up display) text */
             insert_clock_to_draft();
             inesrt_player_life_to_draft();
             insert_player_score_to_draft(0, 11, 15);
+
+            // Saves the changes of the display draft to the display
             save_display_draft();
         }else if (gameState == InMenu){
             // If we are in the menu
@@ -1645,19 +1743,10 @@ void updater(){
             refill_display_draft(menu, 6);
 
             // Handle the input from the user
-            for (i = 0; i < input_queue_received; i++){
-                menu_result = handle_menu_movement(input_queue[i], 2);
-            }
-            // Resetting the input queue vars for next time
-            input_queue_received = 0;
-            input_queue_tail = 0;
+            menu_result = updater_handle_menu_input(2);
 
             // if the user pressed enter (ENTER -> menu_result = 1)
-            if (menu_result){
-                handle_menu_entered(InGame);
-
-                menu_result = 0;
-            }
+            handle_menu_entered(menu_result, InGame);
 
             // Inserts the menus with the effect of hovering above the selected one
             if (menu_index == 0){
@@ -1674,20 +1763,12 @@ void updater(){
             refill_display_draft(menu_game_over, 4);
             
             // Handle the input from the user
-            for (i = 0; i < input_queue_received; i++){
-                menu_result = handle_menu_movement(input_queue[i], 2);
-            }
-            // Resetting the input queue vars for next time
-            input_queue_received = 0;
-            input_queue_tail = 0;
+            menu_result = updater_handle_menu_input(2);
 
             // if the user pressed enter (ENTER -> menu_result = 1)
-            if (menu_result){
-                handle_menu_entered(InMenu);
+            handle_menu_entered(menu_result, InMenu);
 
-                menu_result = 0;
-            }
-
+            // Inserts the points the player scored
             insert_text_to_center_of_draft("Points:", 7, 11, 15, -6);
             insert_player_score_to_draft(11, center_text_in_screen(5) - 5, 15);
 
@@ -1706,20 +1787,12 @@ void updater(){
             refill_display_draft(menu_game_won, 14);
             
             // Handle the input from the user
-            for (i = 0; i < input_queue_received; i++){
-                menu_result = handle_menu_movement(input_queue[i], 2);
-            }
-            // Resetting the input queue vars for next time
-            input_queue_received = 0;
-            input_queue_tail = 0;
+            menu_result = updater_handle_menu_input(2);
 
             // if the user pressed enter (ENTER -> menu_result = 1)
-            if (menu_result){
-                handle_menu_entered(InMenu);
+            handle_menu_entered(menu_result, InMenu);
 
-                menu_result = 0;
-            }
-
+            // Inserts the points the player scored
             insert_text_to_center_of_draft("Points:", 7, 11, 15, -6);
             insert_player_score_to_draft(11, center_text_in_screen(5) - 5, 15);
 
