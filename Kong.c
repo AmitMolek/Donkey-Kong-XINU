@@ -653,7 +653,7 @@ void drawer(){
     while (TRUE){
         receive();
         // if the game was exited we dont want to keep drawing to the screen
-        if (game_exited) return;
+        if (game_exited) continue;
         print_to_screen();
     }
 }
