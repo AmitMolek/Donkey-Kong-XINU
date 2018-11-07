@@ -505,6 +505,12 @@ INTPROC _int9(int mdevno){
     int ascii_code = 0;
 
     // Gets the input from the keyboard
+
+    // ah = 1: Check if there was a key press
+    // then if there is no key press we skip (going to skip_input)
+    // if there is a key press we setting ah = 0
+    // and calling routine 16
+    // after the routine ah = scan code and al = ascii code
     asm{
         MOV AH, 1
         INT 16H
