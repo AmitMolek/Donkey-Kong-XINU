@@ -93,7 +93,7 @@ char menu_game_won[SCREEN_HEIGHT][SCREEN_WIDTH] =
 char map_1[SCREEN_HEIGHT][SCREEN_WIDTH] = 
 {
     "                                                                                ",
-    "--------------------------------------------------------------------------------",
+    "                                                                                ",
     "                                                                                ",
     "                                   ______                                       ",
     "                                   zZzZzZ                                       ",
@@ -116,7 +116,7 @@ char map_1[SCREEN_HEIGHT][SCREEN_WIDTH] =
     "                                                                                ",
     "                     ______________________________________                     ",
     "                     zZzZzZzZzZzZzZzZzZzZzZzZzZzZzZzZzZzZzZ                     ",
-    "--------------------------------------------------------------------------------",
+    "                                                                                ",
 };
 
 char ladders_level_1[SCREEN_HEIGHT][SCREEN_WIDTH] = 
