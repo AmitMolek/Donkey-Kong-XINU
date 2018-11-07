@@ -49,7 +49,7 @@
 
 #define GAME_OBJECT_LABEL_LENGTH 18
 
-#define PLAYER_LIFE_COUNT 1
+#define PLAYER_LIFE_COUNT 3
 #define PLAYER_START_POS_X 40
 #define PLAYER_START_POS_Y 20
 #define HAMMER_MAX_HITS 4
@@ -1438,6 +1438,8 @@ void init_vars_level(){
 
     delete_all_barrels();
 
+    player_lives = PLAYER_LIFE_COUNT;
+
     /* Reposition the player */
     playerObject.top_left_point.x = PLAYER_START_POS_X;
     playerObject.top_left_point.y = PLAYER_START_POS_Y;
@@ -1486,7 +1488,6 @@ void init_vars(){
     // Lock the game
     game_init = 0;
 
-    player_lives = PLAYER_LIFE_COUNT;
     player_score = 0;
 
     init_vars_level();
