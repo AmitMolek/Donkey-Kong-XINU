@@ -1966,7 +1966,6 @@ void start_processes(){
     // Because the clock routine checks every tick if the current point in the cycle
     // is equal to one of the schedules of one of the processes
     // if it is we are telling XINU to re-schedule the processes
-    // So basically we want to fastest re-scheduling
     schedule(3, DEFAULT_CYCLE_LENGTH, draw_pid, CYCLE_DRAWER, up_pid, CYCLE_UPDATER, mang_pid, CYCLE_MANAGER);
 }
 
