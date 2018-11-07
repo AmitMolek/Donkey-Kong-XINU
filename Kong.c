@@ -1662,7 +1662,7 @@ void updater_handle_player_input(){
             mario_got_to_princess = 1;
         }
         // Check for collision with the hammer
-        if (check_collision_with_rectangle(&playerObject, &hammerObject) && !is_with_hammer){
+        if (check_collision_with_rectangle(&playerObject, &hammerObject) && !is_with_hammer && !on_top_ladder){
             send_sound(SOUND_HAMMER_PICKUP_FREQ);
             is_with_hammer = 1;
         }
