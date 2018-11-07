@@ -132,6 +132,12 @@ int clock_ticks = 0;
 int clock_seconds = 0;
 // Counting the minutes
 int clock_minutes = 0;
+// Counter of deltaTimes so we can keep track of time
+int deltaTime_counter = 0;
+// Saves the last elapsed time the function was called
+int time_handler_last_call = 0;
+// A way to not lose any seconds
+int deltaSeconds = 0;
 // External counting of ticks that has passed (in the file clkint.c)
 extern int elapsed_time;
 
@@ -556,12 +562,6 @@ void time_handler(){
     /* Time keeping vars */
     // Holds the time diffrences between the last call and the current call of this function
     int deltaTime = 0;
-    // Counter of deltaTimes so we can keep track of time
-    int deltaTime_counter = 0;
-    // Saves the last elapsed time the function was called
-    int updater_last_call = 0;
-    // A way to not lose any seconds
-    int deltaSeconds = 0;
     // The msg the was recieved
     int received_msg;
 
@@ -571,25 +571,18 @@ void time_handler(){
         // Waiting for the time routine to wake up this process
         // Basically waiting for a tick to pass
         received_msg = receive();
-        // Msg #1 = Game stared
-        if (received_msg == 1){
-            // Restart the necessary vars
-            deltaTime_counter = 0;
-            updater_last_call = elapsed_time;
-            deltaSeconds = 0;
-        }
 
         // if the game is in game and the game is ready for play
         if (gameState == InGame && game_init){
             /* Time tracking */
             // delta time is the measurement of the time between calls
-            deltaTime = elapsed_time - updater_last_call;
+            deltaTime = elapsed_time - time_handler_last_call;
             // delta time counter is the counter of how many ticks passed
             deltaTime_counter += deltaTime;
             // Saving the counter to global use
             clock_ticks = deltaTime_counter;
             // saving the last call of the updater to measure the delta time
-            updater_last_call = elapsed_time;
+            time_handler_last_call = elapsed_time;
 
             // Updating the timer of the gravity
             gravity_ticks -= deltaTime;
@@ -1449,6 +1442,9 @@ void init_vars_level(){
     clock_seconds = 0;
     clock_minutes = 0;
     elapsed_time = 0;
+    deltaTime_counter = 0;
+    time_handler_last_call = 0;
+    deltaSeconds = 0;
 
     /* Restart the input queue */
     input_queue_received = 0;
@@ -1688,12 +1684,6 @@ void updater(){
 
     while (TRUE){
         received_msg = receive();
-        // Msg #1 = Game started
-        // Msg #2 = Delete all barrels
-        if (received_msg == 2 || received_msg == 1){
-            // Delete all barrels
-            //delete_all_barrels();
-        }
 
         // if we are in game and the game is ready to be played
         if (gameState == InGame && game_init){
@@ -1875,9 +1865,6 @@ void manager(){
             if (gameState == InGame){
                 // we need to init the game
                 init_game();
-                // Send a msg to the procceses that we need to start the game
-                send(updater_pid, 1);
-                send(time_handler_pid, 1);
                 last_min = 0;
             }
             prev_game_state = gameState;
@@ -1908,9 +1895,6 @@ void manager(){
                     // The clock is resetted to 0:0 so the last minute needs to be 0
                     last_min = 0;
                     send_sound(SOUND_NEW_LEVEL_FREQ);
-                    // Send a msg to the procceses that we need to start the game
-                    send(time_handler_pid, 1);
-                    send(updater_pid, 2);
                 }else {
                     // Game won!
                     game_won_init();
