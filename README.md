@@ -1,4 +1,4 @@
-# Donky Kong
+# Donkey Kong
 Donky Kong game built on the XINU operating system.
 
 ## Getting Started
