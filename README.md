@@ -19,6 +19,12 @@ It's easy as copying the executable to a folder, navigate to it inside of DosBox
 ./KONG.EXE
 ```
 
+### Controls
+- Right & Left Arrows: Moving right and left
+- Up Arrow: Jump
+- Up & Down Arrows (Near a ladder): Moving up and down a ladder
+- Space: Use a hammer to destroy a barrel
+
 ### Photos
 [Main Menu](https://github.com/AmitMolek/Donky-Kong-XINU/blob/master/other/imgs/menu.png?raw=true)
 
