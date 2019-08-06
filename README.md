@@ -20,7 +20,7 @@ It's easy as copying the executable to a folder, navigate to it inside of DosBox
 ```
 
 ### Photos
-[Main Menu](/other/imgs/1.png)
+[Main Menu](/other/imgs/1)
 
 [Level 1](https://imgur.com/sqFMfbd)
 
