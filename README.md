@@ -3,7 +3,7 @@ Donky Kong game built on the XINU operating system.
 
 ## Getting Started
 This instruction will show you how to run the game.
-**You can download the executable [here](https://github.com/AmitMolek/Donky-Kong-XINU/raw/master/KONG.EXE) if you don't want to compile it by yourself**
+**You can download the executable [here](https://github.com/AmitMolek/Donky-Kong-XINU/raw/master/other/exe/KONG.EXE) if you don't want to compile it by yourself**
 
 ### Prerequisites
 If you want to compile the game you need to have:
@@ -20,7 +20,7 @@ It's easy as copying the executable to a folder, navigate to it inside of DosBox
 ```
 
 ### Photos
-[Main Menu](https://imgur.com/LTrp9FZ)
+[Main Menu](/master/other/imgs/1.png)
 
 [Level 1](https://imgur.com/sqFMfbd)
 
