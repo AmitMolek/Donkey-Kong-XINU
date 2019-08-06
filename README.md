@@ -20,12 +20,12 @@ It's easy as copying the executable to a folder, navigate to it inside of DosBox
 ```
 
 ### Photos
-[Main Menu](/other/imgs/1.png)
+[Main Menu](https://github.com/AmitMolek/Donky-Kong-XINU/blob/master/other/imgs/menu.png?raw=true)
 
-[Level 1](https://imgur.com/sqFMfbd)
+[Level 1](https://github.com/AmitMolek/Donky-Kong-XINU/blob/master/other/imgs/1.png?raw=true)
 
-[Level 1](https://imgur.com/weolhsI)
+[Level 1](https://github.com/AmitMolek/Donky-Kong-XINU/blob/master/other/imgs/2.png?raw=true)
 
-[Level 2](https://imgur.com/8U10xmQ)
+[Level 2](https://github.com/AmitMolek/Donky-Kong-XINU/blob/master/other/imgs/3.png?raw=true)
 
-[Game Over](https://imgur.com/yIAq9vX)
+[Game Over](https://github.com/AmitMolek/Donky-Kong-XINU/blob/master/other/imgs/gameOver.png?raw=true)
