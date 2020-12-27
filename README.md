@@ -26,12 +26,12 @@ It's easy as copying the executable to a folder, navigate to it inside of DosBox
 - Space: Use a hammer to destroy a barrel
 
 ### Photos
-[Main Menu](https://github.com/AmitMolek/Donky-Kong-XINU/blob/master/other/imgs/menu.png?raw=true)
+![Main Menu](other/imgs/menu.png?raw=true)
 
-[Level 1](https://github.com/AmitMolek/Donky-Kong-XINU/blob/master/other/imgs/1.png?raw=true)
+![Level 1](other/imgs/1.png?raw=true)
 
-[Level 1](https://github.com/AmitMolek/Donky-Kong-XINU/blob/master/other/imgs/2.png?raw=true)
+![Level 1](other/imgs/2.png?raw=true)
 
-[Level 2](https://github.com/AmitMolek/Donky-Kong-XINU/blob/master/other/imgs/3.png?raw=true)
+![Level 2](other/imgs/3.png?raw=true)
 
-[Game Over](https://github.com/AmitMolek/Donky-Kong-XINU/blob/master/other/imgs/gameOver.png?raw=true)
+![Game Over](other/imgs/gameOver.png?raw=true)
